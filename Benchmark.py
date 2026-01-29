@@ -41,6 +41,7 @@ def install(package):
 
 try:
     print("Please press ENTER again to proceed.")
+    os.environ["PYUL_AXION_MASS_EV"] = "1e-21" # Set axion mass you need
     import PyUltraLight2 as PyUL
 except ModuleNotFoundError:
     
@@ -55,6 +56,7 @@ except ModuleNotFoundError:
         install('numexpr')
         install('multiprocessing')
         print("Please press ENTER again to proceed.")
+        os.environ["PYUL_AXION_MASS_EV"] = "1e-21" # Set axion mass you need
         import PyUltraLight2 as PyUL
         
     else:
@@ -258,4 +260,3 @@ print(f"\nAvailable CPU Threads: {multiprocessing.cpu_count()}")
 print(f"Resolution: {resol}")
 print(f"Avg Step (s): {DPS:.3g}")
 print("="*80)
-

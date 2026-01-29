@@ -77,6 +77,8 @@ Working at the root directory of PyUltraLight2, one may issue the following Pyth
 
 ```python
 
+import os
+os.environ["PYUL_AXION_MASS_EV"] = "1e-21" # Set axion mass you need
 import PyUltraLight2 as PyUL
 PyUL.evolve('/PATH_TO_FOLDER','FOLDER')
 
