@@ -41,6 +41,7 @@ def install(package):
 
 try:
     print("Please press ENTER again to proceed.")
+os.environ["PYUL_AXION_MASS_EV"] = "1e-21" # Set axion mass you need
     import PyUltraLight2 as PyUL
 except ModuleNotFoundError:
     
