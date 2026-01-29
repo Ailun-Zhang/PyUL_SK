@@ -84,8 +84,6 @@ PyUL.evolve('/PATH_TO_FOLDER','FOLDER')
 
 ```
 
-You will be prompted to pick an axion mass (e.g. 1e-22) upon the first import of the PyUL library.
-
 The ``evolve`` method contains several optional settings, and a brief summary is supplied below
 
 
