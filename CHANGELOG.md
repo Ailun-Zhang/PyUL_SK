@@ -21,6 +21,11 @@ and isolated potential) in the reference environment (Python 3.9.25, NumPy 1.26.
 SciPy 1.13.1, pyFFTW 0.14). The only default-output change is the resampled box (C1), which
 is reproduced exactly with `LegacyResampleBox=True`.
 
+Bugs of older versions that can matter for existing results, and their effect on the printed figures of
+the Stone Skipping paper ([arXiv:2602.11512](https://arxiv.org/abs/2602.11512)), are documented in
+[docs/known_issues_and_errata.md](docs/known_issues_and_errata.md). Figure numbers in this file are the
+printed figure numbers of the paper (13 figures).
+
 ## [30.50] - 2026-10-18 - SK maintenance release
 
 ### Added
@@ -99,7 +104,9 @@ is reproduced exactly with `LegacyResampleBox=True`.
   0.52 %, 0.39 % at resol 64, 128, 192, 256). `evolve(LegacyResampleBox=True)` reproduces
   30.40 bit for bit; with `CellCenteredGrid=False` both are identical. `Resample3Box` now
   returns the resampled cube `PsiNew` (hook for the inline c_nlm work). Affects only the
-  3WfnRS / 3DensityRS / 2DensityRS outputs (CenterCalc=True), never the dynamics.
+  3WfnRS / 3DensityRS / 2DensityRS outputs (CenterCalc=True), never the dynamics. Effect on the
+  paper (Fig. 2 and Fig. 12; eigenmode amplitudes up to 2.4 % too high, frequencies unchanged):
+  [docs/known_issues_and_errata.md](docs/known_issues_and_errata.md#e1-resampled-cube-side-in-3038-and-3040).
 - **P1** Imports: `scipy.special.sph_harm` (removed in SciPy 1.17) replaced by a wrapper with
   the legacy call semantics `sph_harm(m, n, azimuth, polar)` (uses `sph_harm_y(n, m, polar,
   azimuth)` when available; equal to round-off, max |diff| 1.0e-14 for l <= 8, SciPy 1.13.1 vs
@@ -265,6 +272,24 @@ Physics, default outputs and the 30.40 regression are unchanged by all of these.
   `r`/`f`/`E` datasets, not its file hash, equal the paper's eigen file), the different shell
   defaults of the inline recorder (`CnlmNShells=257`) and the toolkit pipeline (`resolR + 1`),
   and the production cluster (described, not named).
+
+### Release documentation and metadata (2026-10-18)
+
+Documentation and metadata only; code, defaults and outputs are unchanged.
+
+- **R11** `NOTICE`: lineage (PyUltraLight, PyUltraLight 2 / PyUL_NBody, SK fork), the licence of the fork's
+  own changes (LICENSE, unchanged) and the upstream BSD-style copyright notice, reproduced verbatim from
+  upstream commit `b7112be` in this repository's history. Shipped in the sdist and as a licence file of
+  the wheel (`license-files = ["LICENSE", "NOTICE"]`).
+- **R12** `docs/known_issues_and_errata.md`: the 30.38/30.40 resampled-cube error (C1) with its quantified
+  effect on the paper's Figs. 2 and 12 and the unaffected figures, the other fixed bugs that matter for
+  results of older versions (P6, P8 - P17, P22), conventions, and which PyUL version made which figure.
+  Linked from README and this file; included in the sdist.
+- **R13** The paper, arXiv:2602.11512, in `CITATION.cff` (`references`), README and `.zenodo.json`
+  (`isSupplementTo`). `CITATION.cff` and `.zenodo.json` carry the final release metadata (authors with
+  ORCID and affiliation, upstream repository as `isDerivedFrom`); no placeholders remain.
+- README: figure numbers follow the printed paper (the 30 000 Myr run is in Fig. 12; the 26.32 runs are
+  those of Figs. 4 - 11), release tag `v30.50`, NOTICE and errata links.
 
 ## [30.40] - 2026-01-29 - SK release
 

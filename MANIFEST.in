@@ -1,7 +1,8 @@
 # Source distribution contents (30.50).  The wheel installs only the package
 # PyUltraLight2 (see pyproject.toml); the sdist is a minimal source checkout in
 # which the shipped test suite runs (python -m pytest from the extracted folder).
-include CHANGELOG.md CITATION.cff LICENSE README.md environment.yml
+include CHANGELOG.md CITATION.cff LICENSE NOTICE README.md environment.yml
+graft docs
 include requirements.txt requirements-full.txt requirements-test.txt
 graft tests
 graft examples

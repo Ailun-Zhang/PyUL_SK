@@ -5,12 +5,14 @@
 A pseudo-spectral (split-step Fourier) solver for the Schroedinger-Poisson equations of ultralight dark
 matter (ULDM), coupled to N-body point masses (black holes), in a non-expanding periodic or isolated box.
 This repository is the fork used for the black-hole simulations of *Stone Skipping Black Holes in
-Ultralight Dark Matter Solitons* (A. Zhang, Y. Wang, J. L. Zagorac and R. Easther).
+Ultralight Dark Matter Solitons* (A. Zhang, Y. Wang, J. L. Zagorac and R. Easther,
+[arXiv:2602.11512](https://arxiv.org/abs/2602.11512)).
 
 The current release is **30.50** (`PyUltraLight2/Current_SK.py`, `S_version = 30.50`). It is a
 maintenance release of the **30.40** core used for part of the paper runs. With default options it
 reproduces 30.40 bit for bit, except the resampled `*RS` outputs, which need one switch (see
-[Versions](#versions-and-reproducing-the-paper-core)).
+[Versions](#versions-and-reproducing-the-paper-core)). Bugs of older versions and their effect on the
+paper's figures are documented in [docs/known_issues_and_errata.md](docs/known_issues_and_errata.md).
 
 ## Contents
 
@@ -41,6 +43,8 @@ reproduces 30.40 bit for bit, except the resampled `*RS` outputs, which need one
 | **PyUltraLight** (original pseudo-spectral ULDM solver) | F. Edwards, E. Kendall, S. Hotchkiss and R. Easther | JCAP 10 (2018) 027, [arXiv:1807.04037](https://arxiv.org/abs/1807.04037), doi:10.1088/1475-7516/2018/10/027 |
 | **PyUltraLight 2 / PyUL_NBody** (N-body particles, energy diagnostics, I/O management, `.uldm` files) | Yourong F. Wang and collaborators (Auckland Cosmology); [Sifyrena.github.io](https://sifyrena.github.io), FWPhys.com | [github.com/Sifyrena/PyUL_NBody](https://github.com/Sifyrena/PyUL_NBody), Zenodo doi:10.5281/zenodo.6336160 |
 | **SK fork** (this repository) | Alan Zhang | [github.com/Ailun-Zhang/PyUL_SK](https://github.com/Ailun-Zhang/PyUL_SK) |
+
+The origin of the code and the upstream copyright notice are recorded in [NOTICE](NOTICE).
 
 Modules adapted by the upstream code and acknowledged in its credits banner: the isolated (zero-padded)
 potential and the dispersive sponge condition are adapted from J. L. Zagorac et al.; the embedded-soliton
@@ -77,9 +81,13 @@ decomposition) please also cite the paper:
 
 ```text
 A. Zhang, Y. Wang, J. L. Zagorac and R. Easther,
-"Stone Skipping Black Holes in Ultralight Dark Matter Solitons", Phys. Rev. D (TODO: volume, article number, DOI).
-Software release: PyUL_SK 30.50, Zenodo doi:TODO (minted from the GitHub release tag TODO).
+"Stone Skipping Black Holes in Ultralight Dark Matter Solitons",
+arXiv:2602.11512 [astro-ph.CO] (2026), https://arxiv.org/abs/2602.11512
 ```
+
+Each GitHub release of this repository (30.50: tag `v30.50`) is archived on Zenodo with its own DOI; the
+Zenodo record of the release gives the DOI to cite for the exact version you used. CITATION.cff lists the
+paper under `references`.
 
 ---
 
@@ -87,17 +95,21 @@ Software release: PyUL_SK 30.50, Zenodo doi:TODO (minted from the GitHub release
 
 | `S_version` | Status | Where |
 |---|---|---|
-| **30.50** | This release (October 2026): maintenance release of 30.40 | `PyUltraLight2/Current_SK.py` at the release tag (TODO: tag name) |
+| **30.50** | This release (October 2026): maintenance release of 30.40 | `PyUltraLight2/Current_SK.py` at the release tag `v30.50` |
 | **30.40** | SK release of January 2026; core of the paper runs for Fig. 1 (five of six masses) and the N = 128 and N = 192 resolution runs of Fig. 2 | git commit `ccab161`, `PyUltraLight2/Current_SK.py` (git blob `fbcc686`, sha256 `c112e0221aaefeb536ef1c39a56b81997f274d28731319beb639db08144ffee3`, LF line endings) |
-| 30.38 | Pre-release of 30.40 (January 2026); N = 256 resolution run of Fig. 2 and the 30 000 Myr run of Fig. 11 | not in this repository's history |
-| 26.32 | Pre-release SK lineage (local files that kept the upstream version number 2.26.32); all other simulation runs of the paper (the 2 % case of Fig. 1 and the runs of Figs. 4 - 10) | the SK variants are not in this repository's history (only the upstream 26.32 file is); several different files carry "26.32", so the number does not identify a unique file |
+| 30.38 | Pre-release of 30.40 (January 2026); the N = 256 resolution run of Fig. 2, which is also the 30 000 Myr run of Fig. 12 | not in this repository's history (not published) |
+| 26.32 | Pre-release SK lineage (local files that kept the upstream version number 2.26.32); all other simulation runs of the paper (the 2 % case of Fig. 1 and the runs of Figs. 4 - 11) | the SK variants are not in this repository's history and are not published (only the upstream 26.32 file is in the history); several different files carry "26.32", so the number does not identify a unique file |
 | 30.37 | Upstream PyUL ("November 13 2024, Dynamic Special 2") | `PyUltraLight2/Previous.py` (not imported) |
 
 Every run records the version that produced it in `reproducibility.uldm` (`"Integrator Version"`) and in
 `config.uldm` (`"PyUL Version"`). Since 30.50 it also records the sha256 of the core file and the library
 versions (see [`reproducibility.uldm`](#reproducibilityuldm)). `S_version` is a float, so 30.50 is stored
-and printed as `30.5`. The provenance of the paper runs is documented with the data deposit
-(TODO: data DOI).
+and printed as `30.5`. The provenance of the paper runs (which run used which core) is documented in the
+paper's data deposit on Zenodo and summarised in
+[docs/known_issues_and_errata.md](docs/known_issues_and_errata.md#which-pyul-version-made-which-figure).
+Figure numbers in this README are the printed figure numbers of the paper (13 figures). The resampled cube
+of 30.38 and 30.40 (C1, below) makes the eigenmode amplitudes of Fig. 2 and Fig. 12 up to 2.4 % too high
+(frequencies and conclusions unchanged); see the errata page.
 
 ### What changed between 30.40 and 30.50
 
@@ -812,6 +824,10 @@ not recorded.
 
 ## Known issues and conventions
 
+Bugs fixed in 30.50 that matter for results made with older versions (including the effect of the
+30.38/30.40 resampled cube on the paper's Figs. 2 and 12) are documented in
+[docs/known_issues_and_errata.md](docs/known_issues_and_errata.md). Conventions that 30.50 keeps:
+
 * **DF (`DYF`) sign.** With `NBodyInterp=True` (the SK `FWNBody`) the `DF` output stores **+grad Phi_SP**
   at the particle, the opposite sign of upstream PyUL and of `FWNBody_NI` (`NBodyInterp=False`), which store
   the acceleration `-grad Phi_SP`. Kept for comparability with existing outputs. `DYF_#000` is always zeros,
@@ -821,9 +837,10 @@ not recorded.
 * **Resampled cube of 30.38 - 30.40.** On cell-centred grids those versions resampled onto `(L - dx) *
   Length_Ratio` while downstream a_lm scripts assumed `L * Length_Ratio` (radial mislabel of 0.78 %,
   0.52 %, 0.39 % at N = 128, 192, 256). Fixed by default in 30.50 (C1); `LegacyResampleBox=True`
-  reproduces it. With the legacy cube and `Length_Ratio = 1` the first resampled plane coincides with the
-  first grid plane, so COM round-off moves those points in or out of the interpolation domain (index-0
-  planes only).
+  reproduces it. Effect on the paper's figures:
+  [errata](docs/known_issues_and_errata.md#e1-resampled-cube-side-in-3038-and-3040). With the legacy cube
+  and `Length_Ratio = 1` the first resampled plane coincides with the first grid plane, so COM round-off
+  moves those points in or out of the interpolation domain (index-0 planes only).
 * **External potential energy.** `ExtPhi` is added to `Phi_SP`, so `calculate_energies` counts its energy
   with the self-gravity factor 0.5 (an external potential should have factor 1).
 * **AutoStop and `DumpFinal`.** After an `AutoStop`/`AutoStop2` break on a non-save step, `Final_psi.npy`
@@ -889,14 +906,18 @@ thread count and FFT backend.
 | `PyUL2_notebook_*.ipynb` | upstream notebooks (`Main`, `Examples`, `Batch`, `Batch_MR`, `SingleBHSoliton`, `3YT`) with stale outputs; they predate the SK features, do not use them, and use the old `k*T/(save_number+1)` time axis |
 | `Benchmark.py`, `Bench.sh` | benchmark |
 | `AlgorithmMap_APS.jpeg`, `PyULLogo.png`, `Done.mp3` | upstream algorithm map, logo and notebook jingle |
-| `CHANGELOG.md`, `CITATION.cff`, `LICENSE` | change log, citation metadata, licence |
+| `docs/known_issues_and_errata.md` | bugs of older versions and their effect on the paper |
+| `CHANGELOG.md`, `CITATION.cff`, `.zenodo.json` | change log, citation metadata, Zenodo release metadata |
+| `LICENSE`, `NOTICE` | licence; origin of the code and the upstream copyright notice |
 
 ---
 
 ## Licence
 
 The SK fork is distributed under the MIT licence in [LICENSE](LICENSE). It derives from PyUltraLight
-(Edwards, Kendall, Hotchkiss & Easther) and PyUltraLight 2 / PyUL_NBody (Y. F. Wang and collaborators); an
-earlier version of the upstream repository carried a BSD-style notice (copyright 2018 erckendall,
-modifications copyright 2020 Yourong Wang), which upstream removed in 2021 (it is still in this repository's
-git history). Please keep the upstream credits when you redistribute or modify the code.
+(Edwards, Kendall, Hotchkiss & Easther) and PyUltraLight 2 / PyUL_NBody (Y. F. Wang and collaborators,
+[github.com/Sifyrena/PyUL_NBody](https://github.com/Sifyrena/PyUL_NBody)). An earlier version of the
+upstream repository carried a BSD-style notice (copyright 2018 erckendall, modifications copyright 2020
+Yourong Wang), which upstream removed in 2021; [NOTICE](NOTICE) reproduces it verbatim from this
+repository's git history and describes the lineage. Please keep LICENSE, NOTICE and the upstream credits
+when you redistribute or modify the code.

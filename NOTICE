@@ -1,0 +1,102 @@
+PyUL_SK (PyUltraLight 2, SK fork) - NOTICE
+==========================================
+
+This file records where the code in this repository comes from and which
+notices apply to it. It does not replace or change LICENSE.
+
+
+Lineage
+-------
+
+1. PyUltraLight (version 1), the original pseudo-spectral solver for
+   ultralight dark matter dynamics:
+   F. Edwards, E. Kendall, S. Hotchkiss and R. Easther,
+   "PyUltraLight: A Pseudo-Spectral Solver for Ultralight Dark Matter
+   Dynamics", JCAP 10 (2018) 027, doi:10.1088/1475-7516/2018/10/027,
+   arXiv:1807.04037.
+   PyUltraLight.py in this repository is a copy of that solver (not imported).
+
+2. PyUltraLight 2 / PyUL_NBody: N-body particles, energy diagnostics, I/O
+   management and the .uldm run files, by Yourong F. Wang and collaborators
+   (Auckland Cosmology).
+   Upstream repository: https://github.com/Sifyrena/PyUL_NBody
+   Software record: Zenodo doi:10.5281/zenodo.6336160
+   This repository is a fork of PyUL_NBody. Its git history up to and
+   including commit 879b8e7 (25 June 2025; upstream PyUL 2.30.37 with its
+   later patches) is the upstream history. PyUltraLight2/Previous.py is the
+   upstream integrator PyUltraLight2/Current.py at that commit (S_version
+   30.37), kept for reference (not imported).
+
+3. SK fork (this repository), by Alan Zhang, from 29 January 2026 (commit
+   039e05a onward): PyUltraLight2/Current_SK.py (cell-centred grids, manual
+   dynamical friction, resampled centre-of-mass cube, and since 30.50 the
+   portability, safety and bug fixes and the inline eigenmode decomposition
+   listed in CHANGELOG.md), PyUltraLight2/_compat.py, the packaging, tests,
+   examples and documentation.
+   Repository: https://github.com/Ailun-Zhang/PyUL_SK
+
+The upstream credits banner also acknowledges modules adapted from
+J. L. Zagorac et al. (isolated potential, dispersive sponge) and from
+N. Guo et al. (embedded-soliton profiles).
+
+The SK fork was written for the black-hole simulations of
+A. Zhang, Y. Wang, J. L. Zagorac and R. Easther, "Stone Skipping Black Holes
+in Ultralight Dark Matter Solitons", arXiv:2602.11512 (2026),
+https://arxiv.org/abs/2602.11512
+
+
+Licences
+--------
+
+The changes made in this fork (the SK fork, item 3 above) are distributed
+under the MIT licence in LICENSE.
+
+The upstream repository carried the BSD-style copyright and licence notice
+below from 27 August 2020 until it deleted its LICENSE file on 14 March 2021
+(upstream commit 370d4e24ab02b27d7ee1f9268d6a3e8439aea8f6, "Delete LICENSE").
+It is reproduced here verbatim, so that it stays with the upstream code on
+which this fork is built. Source: file LICENSE at upstream commit
+b7112be79e208e6415e49fc7701ef672e3f6e890 ("Update LICENSE", Yourong Wang,
+27 August 2020), which is part of this repository's git history
+(`git show b7112be:LICENSE`, git blob e6dfcf6481fefc8f39550e1c42da94f37eeddac9).
+(The upstream initial commit b404762 of the same day had an MIT licence text,
+"Copyright (c) 2020 Yourong Wang", which commit b7112be replaced with the
+notice below.)
+
+----------------------------------------------------------------------------
+Copyright (c) 2018, erckendall All rights reserved.
+
+Modifications:
+Copyright (c) 2020, Yourong Wang
+All rights reserved.
+
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+----------------------------------------------------------------------------
+
+When you redistribute or modify this code, please keep LICENSE, this NOTICE
+file and the credits to the upstream authors, and cite the works listed in
+CITATION.cff.

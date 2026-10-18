@@ -2,25 +2,66 @@ cff-version: 1.2.0
 message: >-
   If you use this software, please cite it as below, together with the
   upstream PyUltraLight and PyUltraLight 2 works listed under references.
+  If you use the SK features (black holes in solitons, manual dynamical
+  friction, the eigenmode decomposition), please also cite the Stone
+  Skipping paper (arXiv:2602.11512) listed under references.
 type: software
 title: "PyUltraLight 2, SK fork (PyUL_SK)"
 abstract: >-
-  Fork of PyUltraLight 2 used for the Stone Skipping black-hole simulations:
-  cell-centred grids, manual dynamical friction, isolated-potential and
-  portability fixes on top of the upstream split-step Schroedinger-Poisson
-  solver with N-body particles.
+  Fork of PyUltraLight 2 used for the black-hole simulations of "Stone
+  Skipping Black Holes in Ultralight Dark Matter Solitons": cell-centred
+  grids, manual dynamical friction, a resampled centre-of-mass cube and an
+  optional inline eigenmode (c_nlm) decomposition, with isolated-potential,
+  portability and bug fixes, on top of the upstream split-step
+  Schroedinger-Poisson solver with N-body particles.
 version: "30.50"
 authors:
   - family-names: Zhang
     given-names: Alan
+    orcid: "https://orcid.org/0009-0000-1187-0755"
+    affiliation: >-
+      Australian National University (Research School of Physics; Research
+      School of Astronomy and Astrophysics); McMaster University; Perimeter
+      Institute for Theoretical Physics
+  - family-names: Wang
+    given-names: Yourong F.
+    orcid: "https://orcid.org/0000-0003-0340-0758"
+    affiliation: "Universität Göttingen"
 license: MIT
 repository-code: "https://github.com/Ailun-Zhang/PyUL_SK"
+url: "https://github.com/Ailun-Zhang/PyUL_SK"
 keywords:
   - ultralight dark matter
+  - fuzzy dark matter
   - Schroedinger-Poisson
   - solitons
   - black holes
+  - dynamical friction
+  - N-body
+  - pseudo-spectral
 references:
+  - type: article
+    title: "Stone Skipping Black Holes in Ultralight Dark Matter Solitons"
+    authors:
+      - family-names: Zhang
+        given-names: Alan
+        orcid: "https://orcid.org/0009-0000-1187-0755"
+      - family-names: Wang
+        given-names: Yourong
+        orcid: "https://orcid.org/0000-0003-0340-0758"
+      - family-names: Zagorac
+        given-names: J. Luna
+        orcid: "https://orcid.org/0000-0003-4504-1677"
+      - family-names: Easther
+        given-names: Richard
+        orcid: "https://orcid.org/0000-0002-7233-665X"
+    year: 2026
+    doi: "10.48550/arXiv.2602.11512"
+    url: "https://arxiv.org/abs/2602.11512"
+    identifiers:
+      - type: other
+        value: "arXiv:2602.11512"
+        description: "arXiv identifier (astro-ph.CO)"
   - type: software
     title: "PyUltralight 2"
     authors:
@@ -31,6 +72,7 @@ references:
     version: "2.26.32"
     doi: "10.5281/zenodo.6336160"
     date-released: "2021-10-23"
+    repository-code: "https://github.com/Sifyrena/PyUL_NBody"
   - type: article
     title: "PyUltraLight: A Pseudo-Spectral Solver for Ultralight Dark Matter Dynamics"
     authors:
@@ -42,6 +84,7 @@ references:
         given-names: Shaun
       - family-names: Easther
         given-names: Richard
+        orcid: "https://orcid.org/0000-0002-7233-665X"
     journal: "Journal of Cosmology and Astroparticle Physics"
     volume: 2018
     issue: "10"

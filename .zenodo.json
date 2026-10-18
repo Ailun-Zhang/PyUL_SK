@@ -1,27 +1,67 @@
 {
-  "title": "PyUltraLight 2, SK fork (PyUL_SK)",
   "upload_type": "software",
+  "title": "PyUL_SK: PyUltraLight 2 SK fork for black holes in ultralight dark matter solitons (v30.50)",
   "version": "30.50",
-  "description": "<p>Fork of PyUltraLight 2 used for the black-hole simulations of <em>Stone Skipping Black Holes in Ultralight Dark Matter Solitons</em>: a pseudo-spectral (split-step Fourier) solver for the Schroedinger-Poisson equations of ultralight dark matter coupled to N-body point masses, with cell-centred grids, manual dynamical friction, isolated-potential and portability fixes, and an optional inline eigenmode (c_nlm) decomposition. Release 30.50 is a maintenance release of the 30.40 core used for part of the paper runs; see CHANGELOG.md.</p><p>Please also cite the upstream PyUltraLight and PyUltraLight 2 works listed in CITATION.cff.</p>",
+  "access_right": "open",
+  "license": "mit",
+  "language": "eng",
+  "description": "<p>PyUL_SK is the fork of PyUltraLight 2 used for the black-hole simulations of <em>Stone Skipping Black Holes in Ultralight Dark Matter Solitons</em> (A. Zhang, Y. Wang, J. L. Zagorac and R. Easther, <a href=\"https://arxiv.org/abs/2602.11512\">arXiv:2602.11512</a>). It is a pseudo-spectral (split-step Fourier) solver for the Schroedinger-Poisson equations of ultralight dark matter coupled to N-body point masses (black holes), with cell-centred grids, manual dynamical friction, isolated or periodic potentials, a resampled centre-of-mass cube for eigenmode analysis, and an optional inline decomposition into soliton eigenmodes, c_nlm(t), computed while the simulation runs (with the companion ULDM-Eigenmode-Toolkit).</p><p>Release 30.50 is a maintenance release of the 30.40 core used for part of the paper runs. With default options it reproduces 30.40 bit for bit, except the resampled-cube outputs, which <code>LegacyResampleBox=True</code> reproduces. It adds packaging, tests, laptop and PBS/Slurm examples, support for Python 3.9 to 3.14 with NumPy 2 and current SciPy, safe non-interactive behaviour on clusters, complete provenance records, and many bug fixes. CHANGELOG.md lists every change; docs/known_issues_and_errata.md documents the bugs of older versions and their effect on the paper's figures.</p><p>Lineage and credits: PyUltraLight by F. Edwards, E. Kendall, S. Hotchkiss and R. Easther (JCAP 10 (2018) 027, doi:10.1088/1475-7516/2018/10/027); PyUltraLight 2 / PyUL_NBody by Yourong F. Wang and collaborators (Auckland Cosmology; <a href=\"https://github.com/Sifyrena/PyUL_NBody\">github.com/Sifyrena/PyUL_NBody</a>, doi:10.5281/zenodo.6336160), on which this fork is built; SK fork by Alan Zhang. The NOTICE file records the origin of the code and reproduces the upstream BSD-style copyright notice; the fork's own changes are distributed under the MIT licence in LICENSE. Please also cite the upstream works and the paper listed in CITATION.cff.</p>",
   "creators": [
     {
       "name": "Zhang, Alan",
-      "affiliation": "TODO: affiliation",
-      "orcid": "TODO: ORCID (or delete this key)"
+      "affiliation": "Australian National University (Research School of Physics; Research School of Astronomy and Astrophysics); McMaster University; Perimeter Institute for Theoretical Physics",
+      "orcid": "0009-0000-1187-0755"
+    },
+    {
+      "name": "Wang, Yourong F.",
+      "affiliation": "Universität Göttingen",
+      "orcid": "0000-0003-0340-0758"
+    }
+  ],
+  "contributors": [
+    {
+      "name": "Edwards, Faber",
+      "type": "Other"
+    },
+    {
+      "name": "Kendall, Emily",
+      "type": "Other"
+    },
+    {
+      "name": "Hotchkiss, Shaun",
+      "type": "Other"
+    },
+    {
+      "name": "Easther, Richard",
+      "type": "Other",
+      "orcid": "0000-0002-7233-665X"
     }
   ],
   "keywords": [
     "ultralight dark matter",
+    "fuzzy dark matter",
     "Schroedinger-Poisson",
     "solitons",
     "black holes",
-    "N-body",
     "dynamical friction",
+    "N-body",
     "pseudo-spectral",
+    "eigenmodes",
     "PyUltraLight"
   ],
-  "license": "MIT",
   "related_identifiers": [
+    {
+      "identifier": "arXiv:2602.11512",
+      "relation": "isSupplementTo",
+      "resource_type": "publication-preprint",
+      "scheme": "arxiv"
+    },
+    {
+      "identifier": "https://github.com/Sifyrena/PyUL_NBody",
+      "relation": "isDerivedFrom",
+      "resource_type": "software",
+      "scheme": "url"
+    },
     {
       "identifier": "10.5281/zenodo.6336160",
       "relation": "isDerivedFrom",
@@ -39,18 +79,6 @@
       "relation": "isReferencedBy",
       "resource_type": "software",
       "scheme": "url"
-    },
-    {
-      "identifier": "TODO: DOI of the Physical Review D article (Stone Skipping Black Holes in Ultralight Dark Matter Solitons)",
-      "relation": "isSupplementTo",
-      "resource_type": "publication-article",
-      "scheme": "doi"
-    },
-    {
-      "identifier": "TODO: Zenodo DOI of the data deposit StoneSkipping_PRD_data_v1",
-      "relation": "isSupplementedBy",
-      "resource_type": "dataset",
-      "scheme": "doi"
     }
   ]
 }
