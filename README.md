@@ -108,7 +108,7 @@ Every run records the version that produced it in `reproducibility.uldm` (`"Inte
 `config.uldm` (`"PyUL Version"`). Since 30.50 it also records the sha256 of the core file and the library
 versions (see [`reproducibility.uldm`](#reproducibilityuldm)). `S_version` is a float, so 30.50 is stored
 and printed as `30.5`. The provenance of the paper runs (which run used which core) is documented in the
-paper's data deposit on Zenodo and summarised in
+paper's data deposit on Zenodo ([doi:10.5281/zenodo.23454343](https://doi.org/10.5281/zenodo.23454343)) and summarised in
 [docs/known_issues_and_errata.md](docs/known_issues_and_errata.md#which-pyul-version-made-which-figure).
 Figure numbers in this README are the printed figure numbers of the paper (13 figures). The resampled cube
 of 30.38 and 30.40 (C1, below) makes the eigenmode amplitudes of Fig. 2 and Fig. 12 up to 2.4 % too high
