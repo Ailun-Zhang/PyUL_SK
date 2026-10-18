@@ -1,12 +1,13 @@
 Version   = str('PyUL')  # Handle used in console.
-# Detailed version string for this SK fork.  Updated to reflect the
-# January 2026 SK release maintained by Alan Zhang.
-D_version = str('January 29 2026, SK release by Alan Zhang')
-# Short version number.  Follows the upstream PyUL v2.30.x scheme but
-# increments to 2.30.40 to distinguish this fork from the upstream
-# 2.30.38/39 series.  Do not rename this to avoid breaking downstream
-# tooling that parses S_version as a float.
-S_version = 30.40
+# Detailed version string for this SK fork (plain ASCII so that it can be
+# printed on any console encoding).
+D_version = str('October 2026, SK maintenance release 30.50 by Alan Zhang')
+# Short version number.  Follows the upstream PyUL v2.30.x scheme.
+# 30.40 (January 2026) is the version used for the Stone Skipping paper runs;
+# 30.50 is a maintenance release (portability, safety and bug fixes; see
+# CHANGELOG.md).  Do not rename this to avoid breaking downstream tooling that
+# parses S_version as a float.
+S_version = 30.50
 
 # Housekeeping
 import time
@@ -19,19 +20,31 @@ import json
 # Core Maths
 import numpy as np
 import numexpr as ne
-import numba
-import pyfftw
 import matplotlib.pyplot as plt
 from scipy.interpolate import CubicSpline as CS 
-from scipy.special import sph_harm as SPH 
 
-print("Importing h5py. If this functionality is not required, please comment out line #22 in the main program.")
-import h5py
+# Portability layer (30.50): optional numba / pyfftw / h5py / IPython, the
+# legacy sph_harm and simps call semantics, thread, path and console helpers.
+try:
+    from . import _compat
+except ImportError:  # Current_SK imported as a top-level module
+    import _compat
 
-# Jupyter
-from IPython.core.display import clear_output
+numba = _compat.numba  # None when numba cannot be imported
+pyfftw = _compat._pyfftw  # None when pyfftw cannot be imported
+SPH = _compat.sph_harm  # legacy scipy.special.sph_harm(m, n, azimuth, polar)
+clear_output = _compat.clear_output  # IPython's, or a no-op without IPython
 
-num_threads = multiprocessing.cpu_count()
+if _compat.NUMBA_IMPORT_ERROR is not None:
+    _compat.safe_print(f"PyUL. Sys: numba is not available ({_compat.NUMBA_IMPORT_ERROR}). "
+                       "Embedded-soliton initialisation and Momentum/AngMomentum saves will use slow pure-Python loops.")
+if _compat.PYFFTW_IMPORT_ERROR is not None:
+    _compat.safe_print(f"PyUL. Sys: pyfftw is not available ({_compat.PYFFTW_IMPORT_ERROR}). "
+                       "FFTs will use the scipy.fft backend.")
+
+# Thread count for module-level helpers (makeDCTGreen).  evolve() resolves its
+# own count (with the small-grid cap) and reports it.
+num_threads = _compat.resolve_num_threads()[0]
 
 pi = np.pi
 
@@ -129,10 +142,11 @@ SSLength = 4
 def printU(Message,SubSys = 'Sys',ToScreen = True, ToFile = False, FilePath = ''):
 
     if ToScreen:
-        print(f"{Version}.{SubSys.rjust(SSLength)}: {Message}")
+        _compat.safe_print(f"{Version}.{SubSys.rjust(SSLength)}: {Message}")
         
     if ToFile and FilePath != "":
-        with open(FilePath, "a+") as o:
+        # UTF-8 log files (30.50): messages may contain non-ASCII paths.
+        with open(FilePath, "a+", encoding="utf-8", errors="replace") as o:
             o.write(f"{GenFromTime()} {Version}.{SubSys.rjust(SSLength)}: {Message}\n")
     
 printU(f"Axion Mass: {axion_E:.2g} eV.", 'Universe')
@@ -191,7 +205,7 @@ def IOSave(loc,Type,save_num,save_format = 'npy',data = [], Old = False):
     elif save_format == 'npz':
         np.savez(file_name,data)
     elif save_format == 'hdf5':
-        
+        h5py = _compat.get_h5py()  # optional dependency, imported on first use
         f = h5py.File(file_name, 'w')
         dset = f.create_dataset(Type, data=data)
         f.close()
@@ -203,6 +217,7 @@ def IOLoad_npy(loc,Type,save_num):
 
 def IOLoad_h5(loc,Type,save_num):
     flname = f"{loc}/Outputs/{Type}/{IOName(Type)}_#{save_num:03d}.hdf5"
+    h5py = _compat.get_h5py()
     f = h5py.File(flname,'r')
     b = f[Type][:]
     f.close()
@@ -213,6 +228,7 @@ def IOLoad_npy_O(loc,Type,save_num):
 
 def IOLoad_h5_O(loc,Type,save_num):
     flname = f"{loc}/Outputs/{IOName(Type)}_#{save_num:03d}.hdf5"
+    h5py = _compat.get_h5py()
     f = h5py.File(flname,'r')
     b = f['init'][:]
     f.close()
@@ -255,8 +271,18 @@ def GenFromTime():
     return timestamp
 
 ####################### AUX. FUNCTION TO GENERATE PROGRESS BAR
+# Progress output mode (30.50): 'bar' is the legacy '\r' bar (default on a TTY
+# and in Jupyter), 'lines' prints one compact ASCII line per snapshot (default
+# when stdout is redirected, e.g. PBS/Slurm logs), 'quiet' prints nothing.
+# PYUL_PROGRESS=bar|lines|quiet overrides; evolve() re-reads it at every start.
+_PROGRESS_MODE = _compat.resolve_progress_mode()
+
 def prog_bar(iteration_number = 100, progress = 1, tinterval = 0 ,status = '',adtl = '', OutNumber = 0):
     size = 10
+
+    mode = _PROGRESS_MODE
+    if mode == 'quiet' or (mode == 'lines' and OutNumber == 0):
+        return
     
     if tinterval != 0:
         ETAStamp = time.time() + (iteration_number - progress)*tinterval
@@ -271,17 +297,27 @@ def prog_bar(iteration_number = 100, progress = 1, tinterval = 0 ,status = '',ad
     if PROG >= 1.:
         PROG, status = 1, ""
     
+    if mode == 'lines':
+        line = (f"{Version}.Prog: snapshot {OutNumber - 1:03d} | step {progress}/{iteration_number} "
+                f"({PROG * 100:.0f}%) | prev. step {tinterval:.2f}s | ETA {ETA}")
+        if adtl:
+            line += f" | {adtl}"
+        _compat.safe_print(line, flush=True)
+        return
+
     block = int(round((size) * PROG))
     
     status = f'{status.ljust(SSLength)}'
   
+    GLY = _compat.progress_glyphs()  # ASCII fallback on narrow encodings
+
     if block == 0:
-        CM = '◎'
+        CM = GLY['head']
         PM = ''
         PL = 0
     else:
-        CM = '○'
-        PM = '◎' 
+        CM = GLY['empty']
+        PM = GLY['head']
         PL = 1
     
     if block == size:
@@ -292,7 +328,7 @@ def prog_bar(iteration_number = 100, progress = 1, tinterval = 0 ,status = '',ad
     LL = size - block
     RL = size - block
 
-    BarText = "●" * LL + PM * PL + CM * CL + PM * PL + "●" * RL
+    BarText = GLY['full'] * LL + PM * PL + CM * CL + PM * PL + GLY['full'] * RL
     
     shift = int(-1 * progress % (2*size+1))
 
@@ -308,7 +344,7 @@ def prog_bar(iteration_number = 100, progress = 1, tinterval = 0 ,status = '',ad
         SaveText,
         status, 'ETA: ',ETA,'Prev.: ',tinterval,adtl)
    
-    print(f'{text}', end="",flush='true')
+    _compat.safe_print(f'{text}', end="",flush=True)
     
     
 def prog_bar_NG(iteration_number = 100, progress = 1, tinterval = 0 ,status = '',adtl = ''):
@@ -336,60 +372,62 @@ def prog_bar_NG(iteration_number = 100, progress = 1, tinterval = 0 ,status = ''
 def PyULCredits(IsoP: bool = False, UseDispSponge: bool = False, embeds: list = []) -> None:
     """Print a detailed credits summary for the PyUltraLight SK fork.
 
-    Alan Zhang's SK fork builds upon the original PyUltraLight codebase to add
+    Alan Zhang's SK fork builds upon the original PyUltraLight codebase to add
     features such as manual dynamical friction, eigenmode decomposition,
-    cell‑centred grid support, improved input handling and a suite of bug
+    cell-centred grid support, improved input handling and a suite of bug
     fixes.  This function reports the version and acknowledges both the
     maintainers of this fork and the upstream authors.  Optional flags can
-    advertise third‑party modules in use.
+    advertise third-party modules in use.  All text is plain ASCII (30.50) so
+    that it prints on any console encoding.
 
     Parameters
     ----------
     IsoP : bool, optional
         If true, mention that the isolated ULDM potential implementation is
-        enabled (adapted from Zagorac et al.).
+        enabled (adapted from Zagorac et al.).
     UseDispSponge : bool, optional
         If true, mention that the dispersive sponge condition is enabled
-        (also adapted from Zagorac et al.).
+        (also adapted from Zagorac et al.).
     embeds : list, optional
-        List of embedded soliton profiles currently in use.  When non‑empty,
-        this will be advertised as adapted from Guo et al.
+        List of embedded soliton profiles currently in use.  When non-empty,
+        this will be advertised as adapted from Guo et al.
     """
-    print("==============================================================================")
+    _p = _compat.safe_print
+    _p("==============================================================================")
     # Header emphasising the SK fork and its maintainer.
-    print(
-        f"{Version}.{S_version}: PyUltraLight SK fork (c) 2020–2026 Alan Zhang and the original PyUL collaborators."
+    _p(
+        f"{Version}.{S_version}: PyUltraLight SK fork (c) 2020-2026 Alan Zhang and the original PyUL collaborators."
     )
-    print(
-        "This fork is maintained by Alan Zhang to provide advanced features and improvements,\n"
-        "including manual dynamical friction, eigenmode decomposition, cell‑centred grids,\n"
-        "environment‑variable input handling and numerous bug fixes (Jan 2026)."
+    _p(
+        "This fork is maintained by Alan Zhang to provide advanced features and improvements,\n"
+        "including manual dynamical friction, eigenmode decomposition, cell-centred grids,\n"
+        "environment-variable input handling and numerous bug fixes (Jan 2026; maintenance release Oct 2026)."
     )
     # Acknowledge the original authors and subsequent upstream maintainers.
-    print(
+    _p(
         "Based on PyUltraLight by Edwards, F., Kendall, E., Hotchkiss, S. & Easther, R.\n"
         "(arXiv:1807.04037). Upstream maintenance and additional contributions by\n"
-        "Yourong F. Wang and collaborators (2020–2026)."
+        "Yourong F. Wang and collaborators (2020-2026)."
     )
-    # Advertise third‑party extensions if requested.
+    # Advertise third-party extensions if requested.
     if IsoP or UseDispSponge or embeds:
-        print("\n**External module in use**")
+        _p("\n**External module in use**")
     if IsoP:
         printU(
-            "Isolated ULDM potential implementation\nAdapted from J. L. Zagorac et al.",
+            "Isolated ULDM potential implementation\nAdapted from J. L. Zagorac et al.",
             "External",
         )
     if UseDispSponge:
         printU(
-            "Dispersive sponge condition\nAdapted from J. L. Zagorac et al.",
+            "Dispersive sponge condition\nAdapted from J. L. Zagorac et al.",
             "External",
         )
     if embeds:
         printU(
-            "Embedded soliton profiles\nAdapted from N. Guo et al.",
+            "Embedded soliton profiles\nAdapted from N. Guo et al.",
             "External",
         )
-    print("==============================================================================")
+    _p("==============================================================================")
 
     
 
@@ -450,8 +488,9 @@ def greenArray(xyz):
 
 # makeDCTGreen
 
-def makeDCTGreen(n):
+def makeDCTGreen(n, threads = None):
     # make Green's function using a DCT
+    # threads (30.50): worker count for scipy.fft; default = module num_threads.
     x2 = np.arange(0, n + 1)**2
     arr = greenArray(x2)
     arr = np.sqrt(arr)
@@ -459,7 +498,7 @@ def makeDCTGreen(n):
     arr[0,0,0] = 3*np.log(np.sqrt(3) + 2) - np.pi/2 #calculated in https://arxiv.org/pdf/chem-ph/9508002.pdf
     # no normalization below matches un-normalization in Mathematica
     import scipy.fft
-    with scipy.fft.set_workers(num_threads):
+    with scipy.fft.set_workers(num_threads if threads is None else int(threads)):
         green =  scipy.fft.dctn(arr, type = 1, norm = None)
     return(green)
     
@@ -566,7 +605,21 @@ def planeConvolveSP(green, plane, n, fft_plane, ifft_plane):
     return ifft_plane(temp)[:-n, :-n]
 
 
-def isolatedPotentialSP(rho, green, l, fft_X, ifft_X, fft_plane, ifft_plane, resol=None, ndx=None):
+def buildGreenPlaneCache(green):
+    """Even-extended (2n,2n) Green planes keyed by plane index 0..n (30.50).
+
+    Exactly the cache that isolatedPotentialSP used to rebuild on every call;
+    evolve() now builds it once per run and passes it in (bitwise identical,
+    avoids ~0.5 GB of allocations per step at resol 256)."""
+    n = green.shape[0] - 1
+    ndx_local = np.concatenate((np.arange(n + 1), np.flip(np.arange(1, n))))
+    cache = {}
+    for k in np.unique(ndx_local):
+        cache[k] = makeEvenArray(green[k, :, :])
+    return cache
+
+
+def isolatedPotentialSP(rho, green, l, fft_X, ifft_X, fft_plane, ifft_plane, resol=None, ndx=None, green_planes=None):
     """
     Compute the isolated (zero padded) gravitational potential using per-plane
     convolution with Green's function slices.  This implementation follows
@@ -609,10 +662,15 @@ def isolatedPotentialSP(rho, green, l, fft_X, ifft_X, fft_plane, ifft_plane, res
     # Build a cache of even-extended Green planes.  Each entry in the cache
     # corresponds to a slice green[k,:,:] which is originally (n+1,n+1).  We
     # extend it to (2n,2n) once up front to avoid repeated memory allocations.
-    unique_indices = np.unique(ndx_local)
-    green_plane_cache = {}
-    for k in unique_indices:
-        green_plane_cache[k] = makeEvenArray(green[k, :, :])
+    # green_planes (30.50): a cache from buildGreenPlaneCache(green), reused
+    # across calls.  Without it the cache is rebuilt here as before.
+    if green_planes is not None:
+        green_plane_cache = green_planes
+    else:
+        unique_indices = np.unique(ndx_local)
+        green_plane_cache = {}
+        for k in unique_indices:
+            green_plane_cache[k] = makeEvenArray(green[k, :, :])
     # Main convolution loop over 2n planes.  We look up the cached Green
     # planes and convolve each density plane via planeConvolve.  Note that
     # planeConvolve pads and performs the 2D FFT internally.
@@ -792,7 +850,8 @@ def convert_back(value, unit, type):
         elif (unit == 'km/h'):
             converted = value / (1e3) * (60 * 60) / time_unit * length_unit
         elif (unit == 'c'):
-            converted = value * time_unit / length_unit / c
+            # 30.50: inverse of convert(); was value * time_unit / length_unit / c
+            converted = value * length_unit / time_unit / c
         else:
             raise NameError('Unsupported SPEED unit used')
             
@@ -1223,7 +1282,8 @@ def FWNBody(t,TMState,masslist,phiSP,a,lengthC,resol, rho=None, df_enable=False,
                 rV = poslocalX - poslocal
                 rVL = np.linalg.norm(rV)
                 if a == 0:
-                    F = 1.0 / (rVL ** 3)
+                    # 30.50: attractive like the Plummer branch (was +1/r^3, repulsive)
+                    F = -1.0 / (rVL ** 3)
                 else:
                     F = -(a ** 3) / ((a ** 2) * (rVL ** 2) + 1) ** 1.5
                 # Apply pairwise force
@@ -1261,7 +1321,8 @@ def FWNBody(t,TMState,masslist,phiSP,a,lengthC,resol, rho=None, df_enable=False,
                 # Local density at particle position
                 rho_loc = QuickInterpolate(rho, lengthC, resol, poslocal)
                 if rho_loc > 0.0:
-                    # Radial distance from origin
+                    # Radial distance from origin (documented in 30.50: |r| is
+                    # measured from the box origin, not from the soliton or ULDM COM)
                     rmag = np.linalg.norm(poslocal)
                     # Build scalar prefactor: DF_pref * m_i * r^2 * rho
                     prefac = float(df_pref) * float(masslist[i]) * (float(rmag) ** 2) * float(rho_loc)
@@ -1270,7 +1331,10 @@ def FWNBody(t,TMState,masslist,phiSP,a,lengthC,resol, rho=None, df_enable=False,
                     dTMdt[Ind + 4] += a_fric[1]
                     dTMdt[Ind + 5] += a_fric[2]
 
-        # Store gradient of potential at this particle (for logging)
+        # Store gradient of potential at this particle (for logging).
+        # Note (documented in 30.50, unchanged): the DF/DYF output of this SK
+        # FWNBody is +grad(phiSP), the opposite sign of upstream PyUL and of
+        # FWNBody_NI, which store -grad(phiSP) (the acceleration).
         GradientLog[IndD] = -fx
         GradientLog[IndD + 1] = -fy
         GradientLog[IndD + 2] = -fz
@@ -1340,7 +1404,8 @@ def FWNBody_NI(t,TMState,masslist,phiSP,a,lengthC,resol, rho=None, df_enable=Fal
                 rV = poslocalX - poslocal
                 rVL = np.linalg.norm(rV)
                 if a == 0:
-                    F = 1.0 / (rVL ** 3)
+                    # 30.50: attractive like the Plummer branch (was +1/r^3, repulsive)
+                    F = -1.0 / (rVL ** 3)
                 else:
                     F = -(a ** 3) / ((a ** 2) * (rVL ** 2) + 1) ** 1.5
                 dTMdt[Ind + 3] -= masslist[ii] * F * rV[0]
@@ -1393,6 +1458,18 @@ def FWNBody_NI(t,TMState,masslist,phiSP,a,lengthC,resol, rho=None, df_enable=Fal
 FWNBody3 = FWNBody
 FWNBody3_NI = FWNBody_NI
 
+_NS_ERROR = ("NS (RK Steps) = {} is not supported: use 0 (no N-body dynamics), 1 (Euler) "
+             "or a positive multiple of 4 (NS/4 RK4 sub-steps per ULDM step).")
+
+def _valid_NS(NS):
+    try:
+        NSi = int(NS)
+    except (TypeError, ValueError):
+        return False
+    if NSi != NS:
+        return False
+    return NSi == 0 or NSi == 1 or (NSi > 0 and NSi % 4 == 0)
+
 def NBodyAdvance(TMState,h,masslist,phiSP,a,lengthC,resol,NS,loc = '',Stream = False, StreamChar = '',
                  rho=None, df_enable=False, df_pref=0.0, df_use_flow=False, Theta=None):
         #
@@ -1401,7 +1478,8 @@ def NBodyAdvance(TMState,h,masslist,phiSP,a,lengthC,resol,NS,loc = '',Stream = F
         if NS == 0: # NBody Dynamics Off
             StateLen = len(TMState)
             
-            GradientLog = np.zeros_like(TMState)
+            # 30.50: 3 entries per particle like every other NS (was 6N long).
+            GradientLog = np.zeros(StateLen//2)
             
             for i in range(StateLen//6):
                 
@@ -1451,6 +1529,10 @@ def NBodyAdvance(TMState,h,masslist,phiSP,a,lengthC,resol,NS,loc = '',Stream = F
 
             return TMStateOut, GradientLog
 
+        else:
+            # 30.50: previously fell through and returned None.
+            raise ValueError(_NS_ERROR.format(NS))
+
 
 def NBodyAdvance_NI(TMState,h,masslist,phiSP,a,lengthC,resol,NS,
                     rho=None, df_enable=False, df_pref=0.0, df_use_flow=False, Theta=None):
@@ -1459,7 +1541,8 @@ def NBodyAdvance_NI(TMState,h,masslist,phiSP,a,lengthC,resol,NS,
             
             StateLen = len(TMState)
             
-            GradientLog = np.zeros_like(TMState)
+            # 30.50: 3 entries per particle like every other NS (was 6N long).
+            GradientLog = np.zeros(StateLen//2)
             
             for i in range(StateLen//6):
                 
@@ -1504,12 +1587,18 @@ def NBodyAdvance_NI(TMState,h,masslist,phiSP,a,lengthC,resol,NS,
 
             return TMStateOut, GradientLog
 
+        else:
+            # 30.50: previously fell through and returned None.
+            raise ValueError(_NS_ERROR.format(NS))
+
 ######################### Early June Addition (Momentum)
 
 
 def LpEval(psi,rho,funct,resol,Uarray,Kx,Ky,Kz,ifft_funct):
     
-    funct *= 1j
+    # 30.50: new array.  The in-place 'funct *= 1j' multiplied the caller's
+    # Fourier-space wavefunction by i, which evolve() then drifted into psi.
+    funct = funct * 1j
     
     A = np.absolute(psi)
 
@@ -1542,7 +1631,8 @@ def LpEval(psi,rho,funct,resol,Uarray,Kx,Ky,Kz,ifft_funct):
 
 def pEval(psi,rho,funct,resol,Uarray,Kx,Ky,Kz,ifft_funct):
     
-    funct *= 1j
+    # 30.50: new array (see LpEval); no longer modifies the caller's funct.
+    funct = funct * 1j
     
     A = np.absolute(psi)
 
@@ -1581,7 +1671,7 @@ def LUQuick(Uarray,DelTx,DelTy,DelTz):
     
     return L
     
-L_jit = numba.jit(LUQuick)
+L_jit = _compat.jit(LUQuick)  # numba.jit when numba is importable
 
 ###
 ###
@@ -1619,7 +1709,9 @@ def LpEvalFast(psi,rho, funct,resol,Uarray,Kx,Ky,Kz,ifft_funct): # THIS DOES NOT
 
 def LoadDefaultSoliton(Silent = True):
     
-    f = np.load('./Soliton Profile Files/initial_f.npy')
+    # 30.50: PYUL_DATA_DIR, then the working directory (legacy './Soliton
+    # Profile Files/'), then the repository root next to the package.
+    f = np.load(_compat.require_resource(os.path.join('Soliton Profile Files', 'initial_f.npy')))
     
     if not Silent:
         printU(f"\n{Version} Loaded original PyUL soliton profiles.",'Load Soliton')
@@ -1830,8 +1922,8 @@ def BHRatioTester(TargetRatio,Iter,Tol,BHMassGMin,BHMassGMax,Smoo):
 
 
         #Calculate the (dimensionless) mass of the soliton:
-        import scipy.integrate as si
-        mass = si.simps(intlist,lr)*4*np.pi
+        # 30.50: scipy.integrate.simps was removed in SciPy 1.14.
+        mass = _compat.simpson(intlist,lr)*4*np.pi
 
         # IMPORTANT 
         Ratio = BHMass/mass
@@ -1864,9 +1956,15 @@ def BHRatioTester(TargetRatio,Iter,Tol,BHMassGMin,BHMassGMax,Smoo):
         
         if IterInt == Iter:
             
+            # 30.50: never call input() in batch jobs; EOF counts as cancel.
+            if not _compat.is_interactive():
+                raise ValueError('Failed to converge to specified mass ratio (non-interactive session, no retry prompt).')
+
             print("Shooting algorithm failed to converge to given ratio. Type 'Y' to add ten more trials, 'B' to raise the upper bound, or '' to cancel.")
             
-            Response = input()
+            Response = _compat.ask()
+            if Response is None:
+                Response = ''
             
             if Response == 'Y':
                 Iter += 10
@@ -1882,7 +1980,9 @@ def BHRatioTester(TargetRatio,Iter,Tol,BHMassGMin,BHMassGMax,Smoo):
 
 def SolitonProfile(BHMass,s,Smoo,Production):
       
-    Save_Folder = './Soliton Profile Files/Custom/'
+    # 30.50: first writable 'Soliton Profile Files/Custom' in the data search
+    # order (legacy: the working directory), else the PyUL cache folder.
+    Save_Folder = _compat.custom_profile_write_dir() + os.sep
     
     #Note that the spatial resolution of the profile must match the specification of delta_x in the main code.
     if Production:
@@ -2007,7 +2107,7 @@ def SolitonProfile(BHMass,s,Smoo,Production):
                     phi_min = s
                     s = (phi_min + phi_max)/2
                     if verbose_output == True:
-                        print("◌", end ="")
+                        _compat.safe_print(_compat.glyph("\u25cc", "."), end ="")
                     if plot_while_calculating == True:
                         plt.plot(la)
                         plt.pause(0.05)
@@ -2020,7 +2120,7 @@ def SolitonProfile(BHMass,s,Smoo,Production):
                     phi_max = s
                     s = (phi_min + phi_max)/2
                     if verbose_output == True:
-                        print("⚬", end ="")
+                        _compat.safe_print(_compat.glyph("\u26ac", "o"), end ="")
                     if plot_while_calculating == True:
                         plt.plot(la)
                         plt.pause(0.05)
@@ -2032,7 +2132,7 @@ def SolitonProfile(BHMass,s,Smoo,Production):
                     phi_max = s
                     s = (phi_min + phi_max)/2
                     if verbose_output == True:
-                        print("⬤", end ="")
+                        _compat.safe_print(_compat.glyph("\u2b24", "O"), end ="")
                     if plot_while_calculating == True:
                         plt.plot(la)
                         plt.pause(0.05)
@@ -2045,7 +2145,7 @@ def SolitonProfile(BHMass,s,Smoo,Production):
                         phi_max = s
                         s = (phi_min + phi_max)/2
                         if verbose_output == True:
-                            print("◯", end ="")
+                            _compat.safe_print(_compat.glyph("\u25ef", "0"), end ="")
                         if plot_while_calculating == True:
                             plt.plot(la)
                             plt.pause(0.05)
@@ -2057,7 +2157,7 @@ def SolitonProfile(BHMass,s,Smoo,Production):
                         phi_max = s
                         s = (phi_min + phi_max)/2
                         if verbose_output == True:
-                            print("☺", end ="")
+                            _compat.safe_print(_compat.glyph("\u263a", ":"), end ="")
                         if plot_while_calculating == True:
                             plt.plot(la)
                             plt.pause(0.05)
@@ -2083,8 +2183,7 @@ def SolitonProfile(BHMass,s,Smoo,Production):
         fwhm = 2*lr[difflist.index(min(difflist))]
 
         #Calculate the (dimensionless) mass of the soliton:
-        import scipy.integrate as si
-        mass = si.simps(intlist,lr)*4*np.pi
+        mass = _compat.simpson(intlist,lr)*4*np.pi
 
         #Calculate the radius containing 90% of the massin
 
@@ -2113,8 +2212,6 @@ def SolitonProfile(BHMass,s,Smoo,Production):
         
         Ratio = BHmass / mass 
         
-        Save_Folder = './Soliton Profile Files/Custom/'
-        
         if Production:
             RATIOName = f"f_{Ratio:.4f}_Pro"
         else:
@@ -2141,52 +2238,56 @@ def SolitonProfile(BHMass,s,Smoo,Production):
 
     print ('Successfully Initiated Soliton Profile.')
     
+def _FindCustomProfile(RatioN, suffix):
+    """Locate f_<RatioN>_Pro<suffix> (preferred) or f_<RatioN>_Dra<suffix>.
+
+    30.50: searched in PYUL_DATA_DIR, the working directory (legacy), the
+    repository root and the PyUL cache folders (see _compat.custom_profile_dirs).
+    """
+    for Kind in ('Pro', 'Dra'):
+        for Folder in _compat.custom_profile_dirs():
+            FileName = os.path.join(Folder, 'f_' + RatioN + '_' + Kind + suffix)
+            if os.path.isfile(FileName):
+                return FileName
+    return None
+
 def LoadSolitonConfig(Ratio): 
     
     Ratio = float(Ratio)
     
     RatioN = f"{Ratio:.4f}"
     
-    FileName = './Soliton Profile Files/Custom/f_'+RatioN+'_Pro_info.uldm'
+    FileName = _FindCustomProfile(RatioN, '_info.uldm')
     
-    if os.path.isfile(FileName):
-        with open(FileName) as json_file:
-            config = json.load(json_file)
-            
-    else:
-        FileName = './Soliton Profile Files/Custom/f_'+RatioN+'_Dra_info.uldm'
-
-    try:
-        config = json.load(open(FileName))
-        
-        delta_x = config["Resolution"]
-        alpha   = config["Alpha"]
-        beta   = config["Beta"]
-        CutOff = config["Radial Cutoff"]
-        
-        return delta_x, alpha, beta, CutOff
-    
-    except FileNotFoundError:
+    if FileName is None:
         raise RuntimeError("This Ratio has not been generated!")
+            
+    with open(FileName) as json_file:
+        config = json.load(json_file)
+
+    delta_x = config["Resolution"]
+    alpha   = config["Alpha"]
+    beta   = config["Beta"]
+    CutOff = config["Radial Cutoff"]
+        
+    return delta_x, alpha, beta, CutOff
         
         
 def LoadSoliton(Ratio):  
     Ratio = float(Ratio)
     RatioN = f"{Ratio:.4f}"
     
-    FileName = './Soliton Profile Files/Custom/f_'+RatioN+'_Pro.npy'
+    FileName = _FindCustomProfile(RatioN, '.npy')
     
-    if os.path.isfile(FileName):
-        return np.load(FileName)
-            
-    else:
-        FileName = './Soliton Profile Files/Custom/f_'+RatioN+'_Dra.npy'
-        return np.load(FileName)
+    if FileName is None:
+        raise FileNotFoundError(f"No custom soliton profile f_{RatioN}_Pro.npy or f_{RatioN}_Dra.npy found in "
+                                + "; ".join(_compat.custom_profile_dirs()))
+    return np.load(FileName)
     
 ##########################################################################################
 # CREATE THE Just-In-Time Functions (work in progress)
 
-initsoliton_jit = numba.jit(initsoliton)
+initsoliton_jit = _compat.jit(initsoliton)  # numba.jit when numba is importable
 
 # -----------------------------------------------------------------------------
 # Replace JIT wrappers for the isolated potential and plane convolution.
@@ -2270,12 +2371,244 @@ def QuadrupoleSecond(mass_grid, gridvec, COMLoc=[0, 0, 0]):
     return quadrupole_moment
 
 
+def _WarnInactiveOptions(save_options, Simpson, NLM, AutoStop3, KEThreshold, CenterCalc, ComputeQuad,
+                         GenerateLog = False, LogLocation = ''):
+    """Emit one warning listing options that are accepted but do nothing (30.50)."""
+    Notes = []
+    for Flag in ('3UMmt', '2UMmt', '1UMmt', '3GravRS', '3GravRSF'):
+        if save_options[SaveFlags.index(Flag)]:
+            Notes.append(f"save flag '{Flag}' (reserved; nothing is ever written)")
+    if save_options[SaveFlags.index('Quadrupole')] and not ComputeQuad:
+        Notes.append("save flag 'Quadrupole' without ComputeQuad=True (nothing is written)")
+    for Flag in ('3DensityRS', '3WfnRS', '2DensityRS'):
+        if save_options[SaveFlags.index(Flag)] and not CenterCalc:
+            Notes.append(f"save flag '{Flag}' without CenterCalc=True (nothing is written)")
+    if Simpson:
+        Notes.append("Simpson=True (not implemented)")
+    if NLM:
+        Notes.append("NLM=True (not implemented)")
+    if AutoStop3:
+        Notes.append("AutoStop3=True (not implemented)")
+    if KEThreshold != 0.9:
+        Notes.append("KEThreshold (only used by the unimplemented AutoStop3)")
+    if Notes:
+        import warnings
+        Msg = "PyUL: these options are accepted for compatibility but have no effect: " + "; ".join(Notes) + "."
+        warnings.warn(Msg, UserWarning, stacklevel = 3)
+        printU(Msg, 'Warn', ToScreen = False, ToFile = GenerateLog, FilePath = LogLocation)
+    return Notes
+
+
+def _SnapshotTimes(Indices, t0, t, save_number):
+    """(code, Myr) times t_k = start_time + k * duration / save_number of save indices k."""
+    Idx = np.asarray(Indices, dtype = np.float64)
+    TCode = t0 + Idx * t / save_number
+    return TCode, convert_back(TCode, 'Myr', 't')
+
+
+def _SaveSnapshotTimes(loc, Indices, t0, t, save_number):
+    """Write Outputs/snapshot_times_code.npy and snapshot_times_Myr.npy (30.50).
+
+    t_k = start_time + k * duration / save_number for the indices actually
+    saved (index 0 is the initial state); rewritten after every save, so the
+    files are complete also after an early AutoStop or a crash.
+    """
+    TCode, TMyr = _SnapshotTimes(Indices, t0, t, save_number)
+    np.save(f"{loc}/Outputs/snapshot_times_code.npy", TCode)
+    np.save(f"{loc}/Outputs/snapshot_times_Myr.npy", TMyr)
+    return TMyr
+
+
+def _PathInside(Path, Folder):
+    """True if Path is Folder or lies below it (real paths, case-normalised)."""
+    P = os.path.normcase(os.path.realpath(os.path.abspath(Path)))
+    F = os.path.normcase(os.path.realpath(os.path.abspath(Folder)))
+    try:
+        return os.path.commonpath([P, F]) == F
+    except ValueError:  # different drives
+        return False
+
+
+class _CnlmHook:
+    """PyUL side of the inline c_nlm decomposition, evolve(Cnlm=True) (30.50).
+
+    The numerical work is done by the ULDM-Eigenmode-Toolkit
+    (Eig_ULDM_packages.cnlm_inline), imported only when Cnlm=True.  Problems
+    found before the time loop raise (fail fast); a failure after the
+    simulation has started is reported as a warning and never stops or changes
+    the simulation (the checkpoints written so far stay usable with
+    'uldm-cnlm RUN_DIR --from-inline').
+    """
+
+    def __init__(self, loc, Options, Overwrite, UseInit, LogLocation, GenerateLog):
+        try:
+            from Eig_ULDM_packages import cnlm_inline
+        except ImportError as Err:
+            raise ImportError(
+                "PyUL: evolve(Cnlm=True) needs the ULDM-Eigenmode-Toolkit (package Eig_ULDM_packages "
+                ">= 0.3.0 with cnlm_inline) and pyshtools: pip install -e <path to ULDM-Eigenmode-Toolkit> "
+                f"pyshtools h5py ({Err})") from Err
+        self.Module = cnlm_inline
+        self.LogLocation = LogLocation
+        self.GenerateLog = GenerateLog
+        self.Failed = None
+        self.Recorder = None
+        # Output files inside <run>/Outputs are covered by evolve's own decision on an
+        # existing Outputs folder (it is replaced, or evolve stops before writing
+        # anything), so they are validated with overwrite=True; otherwise an existing
+        # c_nlm.h5 would raise FileExistsError before an interactive session is asked
+        # [Y/n] or Silent=True deletes Outputs (R9-02).  Files outside Outputs still
+        # need OverwriteOutputs=True.
+        Settings = cnlm_inline.CnlmInlineSettings.validate(
+            loc, eigen_file = Options['CnlmEigenFile'], l_max = Options['CnlmLmax'],
+            n_shells = Options['CnlmNShells'], r_max = Options['CnlmRmax'],
+            num_points = Options['CnlmNumPoints'], angular_grid = Options['CnlmAngularGrid'],
+            save_alm = Options['CnlmSaveAlm'], output = Options['CnlmOutput'],
+            threads = Options['CnlmThreads'], soliton_mass = Options['CnlmSolitonMass'],
+            eigen_params = Options['CnlmEigenParams'], overwrite = True, use_init = UseInit)
+        if not Overwrite:
+            Outside = [P for P in (Settings.output, Settings.alm_output)
+                       if P and not _PathInside(P, Settings.outputs_dir)]
+            for P in Outside:
+                if os.path.exists(P):
+                    raise FileExistsError(
+                        f"PyUL inline c_nlm (Cnlm=True): {P} already exists; pass OverwriteOutputs=True or "
+                        "choose another CnlmOutput / CnlmSaveAlm name")
+            if Outside:
+                import dataclasses
+                Settings = dataclasses.replace(Settings, overwrite = False)
+        self.Settings = Settings
+
+    def Log(self, Message):
+        printU(Message, 'Cnlm', ToFile = self.GenerateLog, FilePath = self.LogLocation)
+
+    def Setup(self, Threads):
+        self.Recorder = self.Module.InlineCnlmRecorder(self.Settings, default_threads = Threads, log = self.Log)
+        self.Recorder.setup()
+
+    def Record(self, Index, CubeFunc, TMyr, Strict = False):
+        """CubeFunc() returns the resampled cube (computed inside the error guard).
+
+        Strict=True (the initial state, before the time loop) re-raises errors."""
+        if self.Failed is not None:
+            return
+        try:
+            Seconds = self.Recorder.record(Index, CubeFunc(), TMyr)
+            self.Log(f"save {Index:03d}: a_lm + c_nlm in {Seconds:.2f} s")
+        except Exception as Err:  # never stop a running simulation for the analysis
+            if Strict:
+                raise
+            self.Fail(f"save {Index}", Err)
+
+    def Fail(self, Where, Err):
+        import warnings
+        self.Failed = Err
+        Msg = (f"PyUL: inline c_nlm failed at {Where} ({type(Err).__name__}: {Err}); the simulation continues "
+               f"without it. Checkpoints written so far: {self.Settings.checkpoint_dir} "
+               f"(assemble with 'uldm-cnlm {self.Settings.run_dir} --from-inline').")
+        warnings.warn(Msg, RuntimeWarning, stacklevel = 3)
+        printU(Msg, 'Cnlm', ToFile = self.GenerateLog, FilePath = self.LogLocation)
+
+    def Finalize(self, TMyr, StoppedEarly):
+        if self.Failed is not None:
+            return None
+        try:
+            return self.Recorder.finalize(TMyr, stopped_early = StoppedEarly)
+        except Exception as Err:
+            self.Fail("the final write", Err)
+            return None
+
+
+def _CnlmCube(psi, rho, CenterCalc, PsiRS, xarray, yarray, zarray, gridvec, loc, save_num, save_format,
+              Length_Ratio, resolR, BoxLength):
+    """The resampled cube of this save exactly as Resample3Box makes it for 3WfnRS (30.50, Cnlm=True).
+
+    With CenterCalc the cube Resample3Box already produced (PsiRS) is used; otherwise
+    the COM is computed from the current density (as for the ULDCOM output without
+    CenterCalc) and the cube is resampled without writing anything.
+    """
+    if CenterCalc:
+        return PsiRS
+    COM = Find3BoxCOM(rho, xarray, yarray, zarray)
+    return Resample3Box(psi, COM, gridvec, loc, save_num, save_format, Length_Ratio, resolR,
+                        BoxLength = BoxLength)
+
+
 def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal = False, UseInit = False, IsoP = False, UseDispSponge = False, SelfGravity = True, NBodyInterp = True, NBodyGravity = True, Shift = False, Simpson = False, Silent = False, AutoStop = False, AutoStop2 = False,AutoStop3 = False, KEThreshold = 0.9, WellThreshold = 100, InitPath = '', InitWeight = 1, Message = '', Stream = False, StreamChar = [0], GenerateLog = True, CenterCalc = False, NLM = False, Length_Ratio = 0.5, resolR = 64, PrintEK = True, DR = 1, MassChange = False, MassFunc = "", CorrectDrift = False, CorrectFreq = 6, ComputeQuad = False, ExtPhi = 0,
-          CellCenteredGrid: bool = False, ManualDF: bool = False, DF_A: float = 0.0, df_use_flow: bool = False):
+          CellCenteredGrid: bool = False, ManualDF: bool = False, DF_A: float = 0.0, df_use_flow: bool = False,
+          LegacyResampleBox: bool = False, OverwriteOutputs: bool = False,
+          Cnlm: bool = False, CnlmEigenFile = None, CnlmLmax: int = 10, CnlmNShells: int = 257,
+          CnlmRmax = None, CnlmNumPoints: int = 300, CnlmAngularGrid: str = 'legacy', CnlmSaveAlm = False,
+          CnlmOutput: str = 'c_nlm.h5', CnlmThreads = None, CnlmSolitonMass = None, CnlmEigenParams = None):
+    """Run a PyUL simulation configured by GenerateConfig (see README).
     
-    if run_folder == "":
+    Keyword arguments added in 30.50 (the defaults keep the 30.40 numbers except
+    the resampled outputs on cell-centred grids, C1; LegacyResampleBox=True
+    reproduces 30.40 bit for bit):
+
+    LegacyResampleBox : bool
+        Resampled outputs (3WfnRS, 3DensityRS, 2DensityRS; CenterCalc=True)
+        use a cube of side lengthC*Length_Ratio (spacing
+        lengthC*Length_Ratio/resolR).  True reproduces 30.38-30.40, whose side
+        is -2*gridvec[0]*Length_Ratio = (L-dx)*Length_Ratio on cell-centred
+        grids.  Both are identical when CellCenteredGrid=False.
+    OverwriteOutputs : bool
+        Explicit consent to delete an existing <run>/Outputs folder.  Without
+        it a non-interactive session (batch job, pipe, CI) raises
+        FileExistsError instead of deleting (Silent=True used to delete) or
+        calling input() (which raised EOFError).  Interactive sessions (TTY or
+        Jupyter) behave as before.  The folder is never deleted when it
+        resolves to the working directory or one of its ancestors, the home
+        directory, or the repository root or one of its ancestors (ValueError).
+
+    Inline c_nlm decomposition (30.50; off by default, and then nothing changes):
+
+    Cnlm : bool
+        At every save (including the initial state) decompose the resampled
+        cube -- exactly the cube Resample3Box writes to 3WfnRS (Length_Ratio,
+        resolR, LegacyResampleBox; centred on the COM used for 3WfnRS, or on the
+        COM of the current density when CenterCalc=False) -- into the soliton
+        eigenmodes and write Outputs/c_nlm.h5 at the end (also after an
+        AutoStop) in the layout of the ULDM-Eigenmode-Toolkit's c_nlm.h5.
+        3WfnRS does not need to be saved.  Needs Eig_ULDM_packages (toolkit
+        >= 0.3.0), pyshtools and h5py.  Per-save checkpoints go to
+        Outputs/Cnlm/alm_checkpoints ('uldm-cnlm RUN_DIR --from-inline'
+        assembles them if the run dies).  Every other output is unchanged.
+    CnlmEigenFile : None, 'auto' or path
+        Eigenfunction HDF5 (ell/<l>/{r,E,f}).  None/'auto' builds it with the
+        toolkit's paper defaults (5120 points including r=0, n_eig 25,
+        lmax=CnlmLmax) from the run's single soliton mass and r_max = CnlmRmax;
+        refused when ambiguous (several or embedded solitons, UseInit) unless
+        CnlmSolitonMass is given.
+    CnlmLmax, CnlmNShells, CnlmRmax, CnlmNumPoints, CnlmAngularGrid :
+        Maximum degree (10), number of shells (257: linspace(0, CnlmRmax, n)
+        with r[0] = 1e-5 in the box length units, the paper grid), outer shell
+        radius (None = half the resampled box side), N of the N x 2N angular
+        grid (300) and its sampling ('legacy' as in the paper, or 'dh').
+    CnlmSaveAlm : bool or str
+        Also write the a_lm file in the toolkit's create_sh_hdf5 layout
+        (True: Outputs/a_lm.h5).
+    CnlmOutput : str
+        c_nlm file name, relative to Outputs (default 'c_nlm.h5').
+    CnlmThreads : int or None
+        Threads for the decomposition (None: PyUL's FFT thread count).
+    CnlmSolitonMass : float or None
+        Soliton mass (config soliton mass units) for the automatic eigen file.
+    CnlmEigenParams : dict or None
+        Overrides for the automatic eigen file: n_grid, lmax, n_eig, maxiter,
+        tol, outer_boundary, mass0.
+    All settings are checked before anything is written (fail fast).
+    """
+    global _PROGRESS_MODE
+    _PROGRESS_MODE = _compat.resolve_progress_mode()
+
+    if run_folder == "" or run_folder is None:
         printU('Nothing done!','Evolve')
         return
+
+    # 30.50: expand '~' before loc and the log path are built (it used to be
+    # applied only afterwards, so '~' paths were handled inconsistently).
+    save_path = os.path.expanduser(save_path)
 
     if CorrectDrift:
         CenterCalc = True
@@ -2293,17 +2626,44 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
     if UseInit and (InitPath == ''):
         raise RuntimeError("UseInit set to true. Must supply initial wavefunction!")
         
+    # 30.50: an InitWeight outside [0, 1] (and not -1) used to discard the
+    # loaded wavefunction silently.
+    if UseInit and not ((0 <= InitWeight <= 1) or InitWeight == -1):
+        raise ValueError(f"InitWeight must lie in [0, 1] (blend) or be -1 (phase only), not {InitWeight!r}.")
+
+    # 30.50: inline c_nlm (Cnlm=True) -- validate everything before any output is touched.
+    CnlmHook = None
+    if Cnlm:
+        CnlmHook = _CnlmHook(loc, dict(CnlmEigenFile = CnlmEigenFile, CnlmLmax = CnlmLmax,
+                                       CnlmNShells = CnlmNShells, CnlmRmax = CnlmRmax,
+                                       CnlmNumPoints = CnlmNumPoints, CnlmAngularGrid = CnlmAngularGrid,
+                                       CnlmSaveAlm = CnlmSaveAlm, CnlmOutput = CnlmOutput,
+                                       CnlmThreads = CnlmThreads, CnlmSolitonMass = CnlmSolitonMass,
+                                       CnlmEigenParams = CnlmEigenParams),
+                             OverwriteOutputs, UseInit, '', False)
+
     try:
         os.mkdir(str(loc + '/Outputs'))
         
     except(FileExistsError):
         
-        if Silent:
+        # 30.50: never delete without consent and never call input() in a
+        # non-interactive session.  Interactive behaviour is unchanged.
+        if OverwriteOutputs:
+            Protect = 'Y'
+        elif not _compat.is_interactive():
+            raise FileExistsError(
+                f"{loc}/Outputs already exists and this session is not interactive. "
+                "Pass OverwriteOutputs=True to evolve() to replace it, or use a new run folder. "
+                "(Since 30.50, Silent=True alone no longer deletes outputs in non-interactive sessions.)")
+        elif Silent:
             Protect = 'Y'
         else:
             printU(f"{Version}: Folder Contains Outputs. Remove current files and Proceed [Y/n]?", 'IO')
 
-            Protect = str(input())
+            Protect = _compat.ask()
+            if Protect is None:  # EOF: keep the files
+                Protect = 'n'
         
         if Protect == 'n':
             return
@@ -2311,6 +2671,7 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
         elif Protect == 'Y':
             import shutil
             
+            _compat.check_safe_rmtree(str(loc + '/Outputs'), 'Outputs folder')  # 30.50
             print('Pre-existing Output files removed.')
             
             shutil.rmtree(str(loc + '/Outputs'))
@@ -2385,14 +2746,29 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
 
     NS, length, length_units, resol, duration, duration_units, step_factor, save_number, save_options, save_format, s_mass_unit, s_position_unit, s_velocity_unit, solitons,start_time, m_mass_unit, m_position_unit, m_velocity_unit, particles, embeds, Uniform,Density, density_unit,a, UVel = LoadConfig(loc)
 
+    # 30.50: reject NS values that NBodyAdvance cannot handle (it returned None).
+    if not _valid_NS(NS):
+        raise ValueError(_NS_ERROR.format(NS))
+
+    _WarnInactiveOptions(save_options, Simpson, NLM, AutoStop3, KEThreshold, CenterCalc, ComputeQuad,
+                         GenerateLog, LogLocation)
+
     for SaveName in SaveOptionsCompile(save_options).split():
         os.mkdir(str(loc + '/Outputs/'+SaveName))        
-    num_threads = multiprocessing.cpu_count()
     
-    if resol < 128:
-        num_threads = np.min([num_threads,4])
+    # 30.50: ComputeQuad writes to Outputs/Quadrupole even without the flag.
+    if ComputeQuad:
+        os.makedirs(str(loc + '/Outputs/Quadrupole'), exist_ok = True)
         
-    printU(f"Using {num_threads} CPU Threads for FFT.",'FFT', ToFile= GenerateLog, FilePath= LogLocation)
+    # 30.50: PYUL_NUM_THREADS > OMP_NUM_THREADS > SLURM_CPUS_PER_TASK > NCPUS
+    # (PBS) > sched_getaffinity > cpu_count; resol < 128 still capped at 4.
+    num_threads, ThreadSource = _compat.resolve_num_threads(resol)
+
+    printU(f"Using {num_threads} CPU Threads for FFT ({ThreadSource}).",'FFT', ToFile= GenerateLog, FilePath= LogLocation)
+
+    # 30.50: pyFFTW (default when importable) or scipy.fft (PYUL_FFT_BACKEND=scipy).
+    FFTB = _compat.resolve_fft_backend()
+    printU(f"FFT backend: {FFTB.name} {FFTB.version}.",'FFT', ToFile= GenerateLog, FilePath= LogLocation)
     # External Credits Print
     PyULCredits(IsoP,UseDispSponge,embeds)
     # Embedded particles are Pre-compiled into the list.
@@ -2494,6 +2870,53 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
     # Update runtime grid context for interpolation.
     _GRID_CONTEXT.update(lengthC, resol, CellCenteredGrid)
 
+    # 30.50: record the settings that 30.40 left out of reproducibility.uldm
+    # (existing keys are unchanged; the new blocks are appended).
+    if LegacyResampleBox:
+        lengthCR_Record = float(-2 * gridvec[0] * Length_Ratio)
+    else:
+        lengthCR_Record = float(lengthC * Length_Ratio)
+    ExtPhiArr = np.asarray(ExtPhi)
+    PyULConfig["SK Grid and Output Settings"] = ({
+        "Cell Centered Grid": bool(CellCenteredGrid),
+        "External Potential": {"Used": bool(np.any(ExtPhiArr != 0)),
+                               "Kind": "scalar" if ExtPhiArr.ndim == 0 else "array",
+                               "Value": float(ExtPhiArr) if ExtPhiArr.ndim == 0 else None,
+                               "Shape": list(ExtPhiArr.shape)},
+        "Compute Quadrupole": bool(ComputeQuad),
+        "Correct COM Drift Frequency": CorrectFreq,
+        "Mass Change": {"Enabled": bool(MassChange),
+                        "Function": (getattr(MassFunc, '__name__', repr(MassFunc)) if MassChange else None)},
+        "Resampled Box": {"resolR": int(resolR),
+                          "Length_Ratio": float(Length_Ratio),
+                          "Legacy Resample Box": bool(LegacyResampleBox),
+                          "Side (code units)": lengthCR_Record,
+                          "Side (kpc)": float(convert_back(lengthCR_Record, 'kpc', 'l')),
+                          "Spacing (code units)": lengthCR_Record / int(resolR),
+                          "Spacing (kpc)": float(convert_back(lengthCR_Record / int(resolR), 'kpc', 'l'))},
+        "Simulation Grid Spacing (code units)": float(lengthC / resol),
+        "Simulation Grid Spacing (kpc)": float(convert_back(lengthC / resol, 'kpc', 'l')),
+    })
+    CoreFile = os.path.abspath(__file__)
+    PyULConfig["Run Environment"] = ({
+        "S_version": S_version,
+        "D_version": D_version,
+        "Core File": CoreFile,
+        "Core SHA256": _compat.file_sha256(CoreFile),
+        "Core SHA256 (LF normalised)": _compat.file_sha256(CoreFile, normalise_newlines = True),
+        "CPU Threads": int(num_threads),
+        "CPU Thread Source": ThreadSource,
+        "FFT Backend": FFTB.name,
+        "Library Versions": _compat.library_versions(),
+    })
+    with open(f'{save_path}/{run_folder}/reproducibility.uldm', "w+") as outfile:
+        json.dump(PyULConfig, outfile,indent=4)
+
+    if CnlmHook is not None:
+        CnlmHook.LogLocation, CnlmHook.GenerateLog = LogLocation, GenerateLog
+        CnlmHook.Setup(num_threads)
+    CnlmBox = None if LegacyResampleBox else lengthC
+
     xarray, yarray, zarray = np.meshgrid(
         gridvec, gridvec, gridvec,
         sparse=True, indexing='ij')
@@ -2516,7 +2939,7 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
     delta_x = 0.00001 # Needs to match resolution of soliton profile array file. Default = 0.00001
 
     warn = 0 
-    funct = pyfftw.zeros_aligned((resol, resol, resol), dtype='complex128')   
+    funct = FFTB.zeros_aligned((resol, resol, resol), dtype='complex128')   
     
     if UseInit:
         psiEx = ULRead(InitPath)
@@ -2537,7 +2960,7 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
         
     # INITIALISE SOLITONS WITH SPECIFIED MASS, POSITION, VELOCITY, PHASE
 
-    psi = pyfftw.zeros_aligned((resol, resol, resol), dtype='complex128')
+    psi = FFTB.zeros_aligned((resol, resol, resol), dtype='complex128')
 
     MassCom = Density*lengthC**3
 
@@ -2654,11 +3077,11 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
             PhaseEx = np.angle(psiEx)
             psi = ne.evaluate("psi*exp(1j*PhaseEx)")
 
-    fft_psi = pyfftw.builders.fftn(psi, axes=(0, 1, 2), threads=num_threads)
+    fft_psi = FFTB.builders.fftn(psi, axes=(0, 1, 2), threads=num_threads)
     
     funct = fft_psi(psi)
     
-    ifft_funct = pyfftw.builders.ifftn(funct, axes=(0, 1, 2), threads=num_threads)       
+    ifft_funct = FFTB.builders.ifftn(funct, axes=(0, 1, 2), threads=num_threads)       
     
     rho = ne.evaluate("abs(abs(psi)**2)")
         
@@ -2674,6 +3097,7 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
         DF_pref = float(DF_A) * DF_K
         printU(f"Manual DF enabled: DF_A={DF_A:.6g}, DF_pref={DF_pref:.6g}", 'NBody', ToFile= GenerateLog, FilePath= LogLocation)
     
+    PsiRS = None  # 30.50: resampled cube of the current save (Cnlm=True)
     if CenterCalc or save_options[25]:
         LocCOM = Find3BoxCOM(rho,xarray, yarray, zarray)
         
@@ -2682,12 +3106,19 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
         
         if CenterCalc:
             printU(LocCOM, "COM", ToScreen = False, ToFile= GenerateLog, FilePath= LogLocation) 
-            Resample3Box(psi, LocCOM, gridvec, loc, 0, save_format, Length_Ratio, resolR, Save_Rho = save_options[20], Save_Psi = save_options[21], Save_Rho2 = save_options[26])
+            PsiRS = Resample3Box(psi, LocCOM, gridvec, loc, 0, save_format, Length_Ratio, resolR, Save_Rho = save_options[20], Save_Psi = save_options[21], Save_Rho2 = save_options[26],
+                         BoxLength = (None if LegacyResampleBox else lengthC))
             
         if CorrectDrift:
             
             COM0 = LocCOM
 
+    if CnlmHook is not None:
+        # 30.50: inline c_nlm of the initial state (same cube as 3WfnRS #000).
+        CnlmHook.Record(0, lambda: _CnlmCube(psi, rho, CenterCalc, PsiRS, xarray, yarray, zarray, gridvec, loc, 0,
+                                             save_format, Length_Ratio, resolR, CnlmBox),
+                        float(_SnapshotTimes([0], t0, t, save_number)[1][0]), Strict = True)
+    PsiRS = None
 
     ##########################################################################################
     # COMPUTE SIZE OF TIMESTEP (CAN BE INCREASED WITH step_factor)
@@ -2747,21 +3178,21 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
     # SETUP PADDED POTENTIAL HERE (From JLZ)
     
     if IsoP:
-        rhopad = pyfftw.zeros_aligned((2*resol, resol, resol), dtype='complex128')
-        bigplane = pyfftw.zeros_aligned((2*resol, 2*resol), dtype='complex128')
+        rhopad = FFTB.zeros_aligned((2*resol, resol, resol), dtype='complex128')
+        bigplane = FFTB.zeros_aligned((2*resol, 2*resol), dtype='complex128')
 
-        fft_X = pyfftw.builders.fftn(rhopad, axes=(0, ), threads=num_threads)
-        ifft_X = pyfftw.builders.ifftn(rhopad, axes=(0, ), threads=num_threads)
+        fft_X = FFTB.builders.fftn(rhopad, axes=(0, ), threads=num_threads)
+        ifft_X = FFTB.builders.ifftn(rhopad, axes=(0, ), threads=num_threads)
 
-        fft_plane = pyfftw.builders.fftn(bigplane, axes=(0, 1), threads=num_threads)
-        ifft_plane = pyfftw.builders.ifftn(bigplane, axes=(0, 1), threads=num_threads)
+        fft_plane = FFTB.builders.fftn(bigplane, axes=(0, 1), threads=num_threads)
+        ifft_plane = FFTB.builders.ifftn(bigplane, axes=(0, 1), threads=num_threads)
 
-    phiSP = pyfftw.zeros_aligned((resol, resol, resol), dtype='float64')
-    phiTM = pyfftw.zeros_aligned((resol, resol, resol), dtype='float64') # New, separate treatment.
+    phiSP = FFTB.zeros_aligned((resol, resol, resol), dtype='float64')
+    phiTM = FFTB.zeros_aligned((resol, resol, resol), dtype='float64') # New, separate treatment.
     
     # print(phiSP.shape) OK THIS FAR
 
-    fft_phi = pyfftw.builders.fftn(phiSP, axes=(0, 1, 2), threads=num_threads)
+    fft_phi = FFTB.builders.fftn(phiSP, axes=(0, 1, 2), threads=num_threads)
     ##########################################################################################
     # SETUP K-SPACE FOR RHO (REAL)
 
@@ -2776,7 +3207,7 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
 
     rkarray2 = ne.evaluate("rkxarray**2+rkyarray**2+rkzarray**2")
 
-    rfft_rho = pyfftw.builders.rfftn(rho, axes=(0, 1, 2), threads=num_threads)
+    rfft_rho = FFTB.builders.rfftn(rho, axes=(0, 1, 2), threads=num_threads)
     
     phik = rfft_rho(rho.real)  # not actually phik but phik is defined in next line
 
@@ -2784,7 +3215,7 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
 
     phik[0, 0, 0] = 0
     
-    irfft_phi = pyfftw.builders.irfftn(phik, axes=(0, 1, 2), threads=num_threads)
+    irfft_phi = FFTB.builders.irfftn(phik, axes=(0, 1, 2), threads=num_threads)
     
     if EdgeClear:
         
@@ -2810,18 +3241,41 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
         
         ndx = resol - np.abs(np.arange(-resol, resol))
                              
-        try:
-            green = np.load(f'./Green Functions/G{resol}.npy')
-            printU(f"Using pre-computed Green function for simulation region.",'SP', ToFile= GenerateLog, FilePath= LogLocation)
-        except FileNotFoundError:
-            if not os.path.exists('./Green Functions/'):
-                os.mkdir('./Green Functions/')
-            green = makeDCTGreen(resol) #make Green's function ONCE
+        # 30.50: look for G{resol}.npy in PYUL_CACHE_DIR, PYUL_DATA_DIR, the
+        # working directory (legacy './Green Functions/'), the repository and
+        # the user cache; a new one is written atomically (tmp + os.replace).
+        green = None
+        for GreenPath in _compat.green_function_read_candidates(resol):
+            if not os.path.isfile(GreenPath):
+                continue
+            try:
+                green = np.load(GreenPath)
+            except (ValueError, OSError, EOFError):
+                printU(f"Ignoring unreadable Green function file {GreenPath}.",'SP', ToFile= GenerateLog, FilePath= LogLocation)
+                green = None
+                continue
+            if green.shape != (resol + 1, resol + 1, resol + 1):
+                printU(f"Ignoring Green function file {GreenPath} with shape {green.shape}.",'SP', ToFile= GenerateLog, FilePath= LogLocation)
+                green = None
+                continue
+            printU(f"Using pre-computed Green function for simulation region ({GreenPath}).",'SP', ToFile= GenerateLog, FilePath= LogLocation)
+            break
+
+        if green is None:
+            green = makeDCTGreen(resol, threads = num_threads) #make Green's function ONCE
             printU(f"Generating Green function for simulation region.",'SP', ToFile= GenerateLog, FilePath= LogLocation)
-            np.save(f'./Green Functions/G{resol}.npy',green)
+            try:
+                GreenPath = _compat.green_function_write_path(resol)
+                _compat.atomic_save_npy(GreenPath, green)
+                printU(f"Cached Green function at {GreenPath}.",'SP', ToFile= GenerateLog, FilePath= LogLocation)
+            except OSError as GreenErr:
+                printU(f"Could not cache the Green function ({GreenErr}); continuing.",'SP', ToFile= GenerateLog, FilePath= LogLocation)
+
+        # 30.50: even-extended Green planes built once per run (bitwise identical).
+        GreenPlanes = buildGreenPlaneCache(green)
             
         #green = makeEvenArray(green)
-        phiSP = IP_jit(rho, green, lengthC, fft_X, ifft_X, fft_plane, ifft_plane, resol, ndx)
+        phiSP = IP_jit(rho, green, lengthC, fft_X, ifft_X, fft_plane, ifft_plane, resol, ndx, green_planes = GreenPlanes)
         
     else:
         printU(f"Poisson Equation Solved Using FFT.",'SP', ToFile= GenerateLog, FilePath= LogLocation)
@@ -2829,13 +3283,16 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
         
     ##########################################################################################
        
+    # Note (documented in 30.50, unchanged): ExtPhi is added to phiSP, so
+    # calculate_energies counts its energy with the self-gravity factor 0.5.
     phiSP += ExtPhi
     # NBody
     EGPCM = 0
     for MI, particle in enumerate(particles):
                
         if MassChange:
-            mT = particle[0] * MassFunc(0)
+            # 30.50: convert to code units like the constant-mass branch.
+            mT = convert(particle[0], m_mass_unit, 'm') * MassFunc(0)
         else:
             mT = convert(particle[0], m_mass_unit, 'm')
 
@@ -2895,13 +3352,15 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
     TMState = np.array(TMState)
     TMState = TMState.flatten(order='C')
     
-    if NBodyGravity:
-        if AutoStop2:
-            if a == 0:
-                phiRef = np.min(phiTM) * WellThreshold # Empirical for now
-            else:
-                phiRef = - a * np.max(masslist) * WellThreshold
-    else:    
+    # 30.50: phiRef is defined whenever AutoStop2 is on (NameError before when
+    # NBodyGravity was False).
+    if AutoStop2:
+        if a == 0:
+            phiRef = np.min(phiTM) * WellThreshold # Empirical for now
+        else:
+            phiRef = - a * np.max(masslist) * WellThreshold
+
+    if not NBodyGravity:
         phiTM *= 0
     
     if SelfGravity:
@@ -2984,6 +3443,10 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
         loc, -1, 1
         )
     
+    # 30.50: times of the snapshots actually written (index 0 = initial state).
+    SnapshotIndices = [0]
+    _SaveSnapshotTimes(loc, SnapshotIndices, t0, t, save_number)
+    
     if ComputeQuad:
         #r_sq = ne.evaluate("xarray**2+yarray**2+zarray**2")
         LocCOM = Find3BoxCOM(rho,xarray, yarray, zarray)
@@ -3058,11 +3521,13 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
             
 
         ###### New Momentum Evaluator
-        if (ix+1) % its_per_momentum == 0:
+        # 30.50: one index per momentum save point.  2Momentum no longer
+        # switches Momentum/AngMomentum off, and save_format is honoured.
+        if ((ix+1) % its_per_momentum == 0) and (save_options[28] or save_options[18] or save_options[19]):
+
+            momentum_I += 1
             
             if save_options[28]: #pEval
-                
-                momentum_I += 1
         
                 pXAr, pYAr, pZAr = pEval(psi,rho,funct,resol,gridvec,Kx,Ky,Kz,ifft_funct)
 
@@ -3070,22 +3535,17 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
                                                                                pYAr[:,:,resol//2], 
                                                                                pZAr[:,:,resol//2]]))
                 
-                save_options[18] = 0
-                save_options[19] = 0
-                
         
             if save_options[18] or save_options[19]:
                 prog_bar(actual_num_steps, ix + 1, tint,'pL',PBEDisp)
 
-                momentum_I += 1
-                
                 pOut,LOut = Lp_jit(psi,rho,funct,resol,gridvec,Kx,Ky,Kz,ifft_funct)
         
                 if save_options[18]:
-                    IOSave(loc,'Momentum',momentum_I,save_format = 'npy',data = pOut)
+                    IOSave(loc,'Momentum',momentum_I,save_format,data = pOut)
 
                 if save_options[19]:
-                    IOSave(loc,'AngMomentum',momentum_I,save_format = 'npy',data = LOut)
+                    IOSave(loc,'AngMomentum',momentum_I,save_format,data = LOut)
 
         funct = ne.evaluate("funct*exp(-1j*0.5*h*karray2)")
         psi = ifft_funct(funct)
@@ -3151,7 +3611,7 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
         if not IsoP:
             phiSP = irfft_phi(phik)
         else:
-            phiSP = IP_jit(rho, green, lengthC, fft_X, ifft_X, fft_plane, ifft_plane, resol, ndx)
+            phiSP = IP_jit(rho, green, lengthC, fft_X, ifft_X, fft_plane, ifft_plane, resol, ndx, green_planes = GreenPlanes)
             
         phiSP += ExtPhi # New Handle
 
@@ -3174,7 +3634,13 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
                                                    df_use_flow=df_use_flow, Theta=Theta)
  
         prog_bar(actual_num_steps, ix + 1, tint,'Phi ')
-        phiTM = pyfftw.zeros_aligned((resol, resol, resol), dtype='float64') # Reset!   
+        phiTM = FFTB.zeros_aligned((resol, resol, resol), dtype='float64') # Reset!   
+        
+        # 30.50: each particle's own mass (was the last particle's, a stale
+        # loop variable), in code units, and also when NBodyGravity is False.
+        if MassChange:
+            for MI in range(NumTM):
+                masslist[MI] = convert(particles[MI][0], m_mass_unit, 'm') * MassFunc(TIntegrate)
         
         if NBodyGravity:
             for MI in range(NumTM):
@@ -3184,9 +3650,6 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
                 TMx = State[0]
                 TMy = State[1]
                 TMz = State[2]
-
-                if MassChange:
-                    masslist[MI] = particle[0] * MassFunc(TIntegrate)
 
                 mT = masslist[MI]
 
@@ -3238,16 +3701,32 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
 # SAVE DESIRED OUTPUTS
         if ((ix + 1) % its_per_save) == 0:
         
-            egpcmMlist.append(EGPCM)
+            # 30.50: egpcmMlist only exists with the Energy flag (NameError before).
+            if save_options[3]:
+                egpcmMlist.append(EGPCM)
             EGPCM = 0
             
             if ComputeQuad: # This Happens At Origin, of Course
-                # LocCOM = Find3BoxCOM(rho,xarray, yarray, zarray)
+                # 30.50: use the current COM (LocCOM was stale without CenterCalc).
+                if not CenterCalc:
+                    LocCOM = Find3BoxCOM(rho,xarray, yarray, zarray)
                 Qij = QuadrupoleSecond(rho, gridvec, LocCOM)
                 IOSave(loc, "Quadrupole", int((ix + 1) / its_per_save),save_format,data = Qij)
 
             if CenterCalc:
-                Resample3Box(psi, LocCOM, gridvec, loc, int((ix + 1) / its_per_save), save_format, Length_Ratio, resolR, Save_Rho = save_options[20], Save_Psi = save_options[21],Save_Rho2 = save_options[26])
+                PsiRS = Resample3Box(psi, LocCOM, gridvec, loc, int((ix + 1) / its_per_save), save_format, Length_Ratio, resolR, Save_Rho = save_options[20], Save_Psi = save_options[21],Save_Rho2 = save_options[26],
+                             BoxLength = (None if LegacyResampleBox else lengthC))
+
+            SnapshotIndices.append(int((ix + 1) / its_per_save))
+            TMyrSaved = _SaveSnapshotTimes(loc, SnapshotIndices, t0, t, save_number)
+
+            if CnlmHook is not None:
+                # 30.50: inline c_nlm of this save (same cube as 3WfnRS); reads psi/rho only.
+                CnlmHook.Record(SnapshotIndices[-1],
+                                lambda: _CnlmCube(psi, rho, CenterCalc, PsiRS, xarray, yarray, zarray, gridvec, loc,
+                                                  SnapshotIndices[-1], save_format, Length_Ratio, resolR, CnlmBox),
+                                float(TMyrSaved[-1]))
+            PsiRS = None
             
             save_grid(
                 rho, psi, resol, 
@@ -3333,6 +3812,8 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
     seconds = Time
     print('\n')
     printU(f"Run Complete. Time Elapsed (d:h:m:s): {day:.0f}:{hour:.0f}:{minutes:.0f}:{seconds:.2f}",'Runtime', ToFile= GenerateLog, FilePath= LogLocation)
+    # Note (documented in 30.50, unchanged): after an AutoStop/AutoStop2 break on
+    # a non-save step the dumped psi lacks the final half-kick exp(-i h/2 phi).
     if DumpFinal:
         printU(f'Dumped final state to file.','IO', ToFile= GenerateLog, FilePath= LogLocation)
         ULDump(loc,psi,TMState,'Final')
@@ -3341,6 +3822,11 @@ def evolve(save_path,run_folder, EdgeClear = False, DumpInit = False, DumpFinal 
         file = open(f'{loc}/StoppingTime.uldm', "w+")
         file.write('-1')
         file.close()
+
+    if CnlmHook is not None:
+        # 30.50: write Outputs/c_nlm.h5 with the real save times (= snapshot_times_Myr.npy).
+        CnlmHook.Finalize(_SnapshotTimes(SnapshotIndices, t0, t, save_number)[1],
+                          len(SnapshotIndices) < save_number + 1)
 
 ################################################################################
 ################################################################################
@@ -3405,27 +3891,42 @@ def SSEst(SO, save_number, resol):
 
 def DSManagement(save_path, Force = False):
     
-    print('[',save_path,']',": The current size of the folder is", round(get_size(save_path)/1024**2,3), 'Mib')
+    # 30.50: Force=True works on non-empty and on missing folders (it raised
+    # UnboundLocalError / FileNotFoundError), nested paths are created, and a
+    # non-interactive session is never asked (the folder is kept).  A folder
+    # that resolves to the filesystem root, the home directory, the working
+    # directory or one of its ancestors, or the repository root or one of its
+    # ancestors is never deleted (ValueError; e.g. DSManagement('~', Force=True)).
+    _p = _compat.safe_print
+    save_path = os.path.expanduser(save_path)  # 30.50: '~' handled like in evolve
 
+    _p('[',save_path,']',": The current size of the folder is", round(get_size(save_path)/1024**2,3), 'Mib')
+
+    cleardir = 'N'
     if get_size(save_path) == 0:
         cleardir = 'N'
     elif not Force:
-        print('[',save_path,']',": Do You Wish to Delete All Files Currently Stored In This Folder? [Y] \n")
-        cleardir = str(input())
+        if _compat.is_interactive():
+            _p('[',save_path,']',": Do You Wish to Delete All Files Currently Stored In This Folder? [Y] \n")
+            cleardir = _compat.ask() or 'N'
+        else:
+            _p('[',save_path,']',": Folder is not empty; keeping its contents (non-interactive session; use Force=True to delete).")
     
-    if cleardir == 'Y' or Force:
+    if (cleardir == 'Y' or Force) and os.path.isdir(save_path):
         import shutil 
+        # 30.50: never the filesystem root, home, cwd (or an ancestor) or the repository.
+        _compat.check_safe_rmtree(save_path, 'save folder')
         shutil.rmtree(save_path)
-        print("Folder Cleaned! \n")
+        _p("Folder Cleaned! \n")
     
     try:
-        os.mkdir(save_path)
-        print('[',save_path,']',": Save Folder Created.")
+        os.makedirs(save_path)
+        _p('[',save_path,']',": Save Folder Created.")
     except FileExistsError:
         if cleardir != 'Y':
-            print("")
+            _p("")
         else:
-            print('[',save_path,']',": File Already Exists!")
+            _p('[',save_path,']',": File Already Exists!")
             
 
             
@@ -3760,13 +4261,24 @@ def GenerateConfig(
     NS, length, length_units, resol, duration, duration_units, step_factor, save_number,
     save_options, save_path, save_format, s_mass_unit, s_position_unit, s_velocity_unit,
     solitons, start_time, m_mass_unit, m_position_unit, m_velocity_unit, particles, embeds,
-    Uniform, Density, density_unit, a, UVel, NoInteraction=False, Name=''
+    Uniform, Density, density_unit, a, UVel, NoInteraction=False, Name='', Overwrite=False
 ):
+    """Write save_path/<Name or timestamp>/config.uldm and return the run name.
+
+    Overwrite (30.50): explicit consent to delete an existing run folder of
+    the same name.  In a non-interactive session (batch job, pipe, CI) an
+    existing folder now raises FileExistsError unless Overwrite=True; before,
+    NoInteraction=True deleted it silently and NoInteraction=False called
+    input(), which raised EOFError.  Interactive sessions (TTY or Jupyter)
+    behave as before.
+    """
     tm = GenFromTime()
+    save_path = os.path.expanduser(save_path)  # 30.50: '~' handled like in evolve
 
     # Decide whether we are truly in an interactive terminal.
     # In PBS batch jobs, stdin is typically not a TTY -> avoid input().
-    interactive = bool(getattr(sys.stdin, "isatty", lambda: False)())
+    # 30.50: PYUL_INTERACTIVE=0|1 overrides the TTY test.
+    interactive = _compat.stdin_is_tty()
 
     # If user requests non-interactive, OR we are not in a real terminal, never prompt.
     if NoInteraction or (not interactive):
@@ -3797,19 +4309,30 @@ def GenerateConfig(
         os.makedirs(Dir)
     except(FileExistsError):
         import shutil
-        if NoInteraction:
+        FolderInteractive = _compat.is_interactive()
+        if Overwrite or (NoInteraction and FolderInteractive):
+            _compat.check_safe_rmtree(Dir, 'run folder')  # 30.50
             shutil.rmtree(Dir)
             os.mkdir(Dir)
+
+        elif not FolderInteractive:
+            raise FileExistsError(
+                f"Run folder {Dir} already exists and this session is not interactive. "
+                "Pass Overwrite=True to GenerateConfig to replace it, or choose another Name. "
+                "(Since 30.50, NoInteraction=True alone no longer deletes it in non-interactive sessions.)")
             
         else: 
             print(f"{Version} IO: Folder Not Empty. Are you sure you want to proceed [Y/n]? \nTo reuse the pre-existing config file, type [C].")
               
-            Protect = str(input())
+            Protect = _compat.ask()
+            if Protect is None:  # EOF: keep the folder
+                Protect = 'n'
         
             if Protect == 'n':
                 return
 
             elif Protect == 'Y':
+                _compat.check_safe_rmtree(Dir, 'run folder')  # 30.50
                 print('Pre-existing files removed.')
 
                 shutil.rmtree(Dir)
@@ -3817,6 +4340,7 @@ def GenerateConfig(
                 
             elif Protect == 'C':
                 try:
+                    _compat.check_safe_rmtree(str(Dir+'/Outputs'), 'Outputs folder')  # 30.50
                     shutil.rmtree(str(Dir+'/Outputs'))
                 except FileNotFoundError:
                     print('Using pre-existing config in folder.')
@@ -3904,6 +4428,7 @@ def GenerateConfig(
     return timestamp
     
 def Runs(save_path, Automatic = True):
+    save_path = os.path.expanduser(save_path)  # 30.50: '~' handled like in evolve
     runs = os.listdir(save_path)
     runs.sort()
     if Automatic:
@@ -3930,11 +4455,24 @@ def Runs(save_path, Automatic = True):
         return Latest
     
     else:
+        # 30.50: no prompt in non-interactive sessions (the latest run is
+        # returned, nothing is deleted); a blank answer no longer raises
+        # AttributeError when Automatic=False.
+        if not _compat.is_interactive():
+            if os.path.isfile(os.path.join(save_path, 'latest.uldm')):
+                Latest = Load_Latest(save_path)
+                printU(f"Non-interactive session: loading the latest run {Latest}")
+                return Latest
+            raise RuntimeError("Runs(): several runs found but the session is not interactive and "
+                               "latest.uldm is missing; pass the run folder name explicitly.")
+
         print("Which folder do you want to analyse? Blank to load the latest one. 'X[Number]' to Delete")
         
-        Ind = (input() or int(-1))
+        Ind = _compat.ask() or ''
 
-        if Ind == -1 and Automatic:
+        if Ind == '':
+            if not Automatic:
+                Latest = Load_Latest(save_path)
             printU(f"Loading {Latest}")
             return Latest
         
@@ -3945,6 +4483,7 @@ def Runs(save_path, Automatic = True):
             
             import shutil
                        
+            _compat.check_safe_rmtree(TDName, 'run folder')  # 30.50
             shutil.rmtree(TDName)
             clear_output()
             return Runs(save_path, Automatic = Automatic)
@@ -4058,7 +4597,7 @@ def NBodyEnergy(MassListSI,TMDataSI,EndNum,a=0,length_units = ''): # kg, m, m/s,
         
         rP =  RecPlummer(a,length_units)
 
-        rPSI = convert_between(rP, "length_units", "SI", "l")
+        rPSI = convert_between(rP, length_units, "SI", "l")  # 30.50: was the literal string "length_units"
 
         ADim = 1/rPSI # This is now in SI Units. Thanks RB!
     
@@ -4078,7 +4617,7 @@ def NBodyEnergy(MassListSI,TMDataSI,EndNum,a=0,length_units = ''): # kg, m, m/s,
         for Mass1 in range(NBo):
 
             Index1 = int(Mass1*6)
-            Position1 = Data[Index1:Index1+2]
+            Position1 = Data[Index1:Index1+3]  # 30.50: x, y, z (was x, y only)
             m1 = MassListSI[Mass1]
             if m1 == 0:
                 continue
@@ -4092,7 +4631,7 @@ def NBodyEnergy(MassListSI,TMDataSI,EndNum,a=0,length_units = ''): # kg, m, m/s,
 
             for Mass2 in range (Mass1+1,NBo,1):
                 Index2 = int(Mass2*6)
-                Position2 = Data[Index2:Index2+2]
+                Position2 = Data[Index2:Index2+3]  # 30.50: x, y, z (was x, y only)
                 m2 = MassListSI[Mass2]
                 if m2 == 0:
                     continue
@@ -4636,9 +5175,9 @@ def Init3D(length,length_units,resol,embeds,
     delta_x = 0.00001 # Needs to match resolution of soliton profile array file. Default = 0.00001
 
     warn = 0 
-    funct = pyfftw.zeros_aligned((resol, resol, resol), dtype='complex128')   
+    funct = _compat.zeros_aligned((resol, resol, resol), dtype='complex128')   
 
-    psi = pyfftw.zeros_aligned((resol, resol, resol), dtype='complex128')
+    psi = _compat.zeros_aligned((resol, resol, resol), dtype='complex128')
 
     MassCom = Density*lengthC**3
 
@@ -4734,7 +5273,8 @@ def Init3D(length,length_units,resol,embeds,
     for MI, particle in enumerate(particles):
 
         if MassChange:
-            mT = particle[0] * MassFunc(0)
+            # 30.50: convert to code units like the constant-mass branch.
+            mT = convert(particle[0], m_mass_unit, 'm') * MassFunc(0)
         else:
             mT = convert(particle[0], m_mass_unit, 'm')
 
@@ -4776,7 +5316,7 @@ def Init3D(length,length_units,resol,embeds,
             # be undefined on the first iteration, leading to NameError.  Using an
             # aligned FFTW array mirrors the pattern elsewhere in the codebase and
             # avoids unnecessary Python allocation overhead when resol is large.
-            phiTM = pyfftw.zeros_aligned((resol, resol, resol), dtype='float64')
+            phiTM = _compat.zeros_aligned((resol, resol, resol), dtype='float64')
 
             distarrayTM = ne.evaluate("((xarray-TMx)**2+(yarray-TMy)**2+(zarray-TMz)**2)**0.5") # Radial coordinates
             if a == 0:
@@ -4935,8 +5475,8 @@ def DefaultSolitonOrbit(resol,length, length_units, s_mass, s_mass_unit, m_radiu
         CutOff = len(linearray)
     
     Integrand = linearray[0:CutOff]**2 * funct[0:CutOff]
-    from scipy import integrate as SINT
-    MInt = 4*np.pi*SINT.simps(Integrand, x = linearray[0:CutOff])
+    # 30.50: scipy.integrate.simps was removed in SciPy 1.14; identical call semantics.
+    MInt = 4*np.pi*_compat.simpson(Integrand, x = linearray[0:CutOff])
     
     VC = np.sqrt(MInt/m_radiC)
     
@@ -4966,7 +5506,7 @@ def InterpolateCurve3(x,y,z, Resol = 1800, ResolGain = 10):
 
     BSplineX = SInt.make_interp_spline(t,x)
     BSplineY = SInt.make_interp_spline(t,y)
-    BSplineZ = SInt.make_interp_spline(t,y)
+    BSplineZ = SInt.make_interp_spline(t,z)  # 30.50: was built from y
     
     if ResolGain > 0:
         Resol = int(len(x) * ResolGain)
@@ -5030,7 +5570,9 @@ def HighBasisInit_O(n,resol,mS, xarray, yarray, zarray):
     
     # Principal Quantum Number = n+1
     
-    Name = f'./Soliton Profile Files/HFK/f_HFK_{n:02d}'
+    # 30.50: resolved like the other data files (PYUL_DATA_DIR, CWD, repository).
+    HFKFolder = _compat.find_resource(os.path.join('Soliton Profile Files', 'HFK')) or './Soliton Profile Files/HFK'
+    Name = os.path.join(HFKFolder, f'f_HFK_{n:02d}')
     
     DataName = Name + '.npy'
     MDataName = Name + '_info.uldm'
@@ -5157,12 +5699,27 @@ def Find3BoxCOM(rho,xGrid, yGrid, zGrid):
     COM = np.array([np.sum(xGrid * rho),np.sum(yGrid * rho),np.sum(zGrid * rho)])/np.sum(rho)
     return COM
     
-def Resample3Box(psi, COM, XAR, loc, save_num, save_format, Length_Ratio = 0.5, resolR = 128, Save_Rho = False, Save_Psi = False, Compatibility = False, Save_Rho2 = False):
+def Resample3Box(psi, COM, XAR, loc, save_num, save_format, Length_Ratio = 0.5, resolR = 128, Save_Rho = False, Save_Psi = False, Compatibility = False, Save_Rho2 = False, BoxLength = None):
+    """Linear resampling of psi onto a resolR^3 cube centred on COM.
+
+    The cube side is BoxLength*Length_Ratio when BoxLength (the simulation box
+    length in code units) is given -- the 30.50 default in evolve, spacing
+    BoxLength*Length_Ratio/resolR.  With BoxLength=None the legacy side
+    -2*XAR[0]*Length_Ratio is used, which equals L*Length_Ratio on
+    node-centred grids but (L-dx)*Length_Ratio on cell-centred grids
+    (30.38-30.40 behaviour, evolve(LegacyResampleBox=True)).
+    Points outside the simulation grid are filled with 0 (not periodic).
+
+    Returns the resampled complex cube PsiNew (30.50; was None).
+    """
     
     from scipy.interpolate import RegularGridInterpolator as RPI
     # Note that phase correction is not performed in this version.
     
-    lengthCR = -2 * XAR[0] * Length_Ratio
+    if BoxLength is None:
+        lengthCR = -2 * XAR[0] * Length_Ratio
+    else:
+        lengthCR = BoxLength * Length_Ratio
 
     if Compatibility:
         GVR = np.linspace(-lengthCR / 2.0 + lengthCR / float(2 * resolR), lengthCR / 2.0 - lengthCR / float(2 * resolR), int(resolR), endpoint = True)
@@ -5196,6 +5753,8 @@ def Resample3Box(psi, COM, XAR, loc, save_num, save_format, Length_Ratio = 0.5, 
     if Save_Rho2:
         RhoNew = ne.evaluate("conj(PsiNew)*PsiNew").real
         IOSave(loc,'2DensityRS',save_num,save_format,RhoNew[:,:,resolR//2])
+
+    return PsiNew
 
 
 def Wfn_to_PyUL1(psi):
@@ -5271,7 +5830,8 @@ def FWNBodySimple(TMState,masslist,a = 0):
                 rVL = np.linalg.norm(rV) # Positive
                 
                 if a == 0:
-                    F = 1/(rVL)**3
+                    # 30.50: attractive like the Plummer branch (was +1/r^3, repulsive)
+                    F = -1/(rVL)**3
                 else:                    
                     F = -(a**3)/(a**2*rVL**2+1)**(1.5) # The First Plummer
                 
