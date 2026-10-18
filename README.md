@@ -2,6 +2,8 @@
 
 # PyUltraLight 2, SK fork (PyUL_SK)
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23454001.svg)](https://doi.org/10.5281/zenodo.23454001)
+
 A pseudo-spectral (split-step Fourier) solver for the Schroedinger-Poisson equations of ultralight dark
 matter (ULDM), coupled to N-body point masses (black holes), in a non-expanding periodic or isolated box.
 This repository is the fork used for the black-hole simulations of *Stone Skipping Black Holes in
@@ -85,9 +87,10 @@ A. Zhang, Y. Wang, J. L. Zagorac and R. Easther,
 arXiv:2602.11512 [astro-ph.CO] (2026), https://arxiv.org/abs/2602.11512
 ```
 
-Each GitHub release of this repository (30.50: tag `v30.50`) is archived on Zenodo with its own DOI; the
-Zenodo record of the release gives the DOI to cite for the exact version you used. CITATION.cff lists the
-paper under `references`.
+Each GitHub release of this repository is archived on Zenodo with its own DOI. Release 30.50 (tag
+`v30.50`) is [doi:10.5281/zenodo.23454002](https://doi.org/10.5281/zenodo.23454002); the concept DOI
+[10.5281/zenodo.23454001](https://doi.org/10.5281/zenodo.23454001) always resolves to the latest
+release. CITATION.cff lists the paper under `references`.
 
 ---
 

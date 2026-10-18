@@ -15,6 +15,15 @@ abstract: >-
   portability and bug fixes, on top of the upstream split-step
   Schroedinger-Poisson solver with N-body particles.
 version: "30.50"
+doi: 10.5281/zenodo.23454002
+date-released: "2026-10-18"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23454002
+    description: "Zenodo archive of release v30.50"
+  - type: doi
+    value: 10.5281/zenodo.23454001
+    description: "Zenodo concept DOI (all versions)"
 authors:
   - family-names: Zhang
     given-names: Alan
