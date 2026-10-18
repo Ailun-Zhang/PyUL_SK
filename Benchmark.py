@@ -3,65 +3,78 @@
 """
 Created on Fri Oct 29 16:14:05 2021
 Yourong F Wang (FWPhys.github.io)
+
+PyUltraLight 2 performance benchmark.
+
+Usage:
+    python Benchmark.py                      # asks for the resolution on a terminal
+    python Benchmark.py --resol 64 --yes     # non-interactive (batch jobs, CI)
+
+30.50 (SK maintenance release): command-line options, no input() when the
+session is not interactive, no automatic 'pip install' (it tried to install the
+standard-library module 'multiprocessing'), outputs written to <repo>/Bench/,
+and the momentum/COM-correcting soliton now uses its intended mass MF.
 """
 
+import argparse
+import os
+import sys
+
+PRESETS = {'potato': 64, 'a': 256, 'b': 384, 'c': 512, 'd': 1024}
+
+parser = argparse.ArgumentParser(description="PyUltraLight 2 performance benchmark")
+parser.add_argument("--resol", type=int, default=None,
+                    help="grid resolution (presets: Potato=64, A=256, B=384, C=512, D=1024)")
+parser.add_argument("--yes", action="store_true", help="do not wait for ENTER")
+parser.add_argument("--axion-mass", default="1e-21", help="PYUL_AXION_MASS_EV (default 1e-21)")
+parser.add_argument("--out", default=None, help="output folder (default: <repository>/Bench)")
+args = parser.parse_args()
+
+interactive = sys.stdin is not None and sys.stdin.isatty()
 
 print("Welcome to PyUltraLight 2 Performance Benchmark")
 
-print("Please key in the letter for a specific resolution. ENTER to confirm")
-
-print("[Potato] 64³. [A] 256³. [B] 384³. [C] 512³. [D] 1024³")
-
-userinput = input()
-
-if userinput == 'Potato':
-    resol = 64
-elif userinput == 'A' or userinput == 'a':
-    resol = 256
-elif userinput == 'B' or userinput == 'b':
-    resol = 384
-elif userinput == 'D' or userinput == 'd':
-    resol = 1024
+if args.resol is not None:
+    resol = int(args.resol)
+elif interactive:
+    print("Please key in the letter for a specific resolution. ENTER to confirm")
+    print("[Potato] 64^3. [A] 256^3. [B] 384^3. [C] 512^3. [D] 1024^3")
+    try:
+        userinput = input()
+    except EOFError:
+        userinput = ''
+    resol = PRESETS.get(userinput.strip().lower(), 512)
 else:
-    resol = 512
+    resol = 64
+    print("Non-interactive session and no --resol given: using 64^3.")
 
-      
-print("Note: This script will produce outputs in the path [PyUL]/Bench/.")
+HERE = os.path.dirname(os.path.abspath(__file__))
+save_path = args.out or os.path.join(HERE, 'Bench')
+
+print(f"Note: This script will produce outputs in the path {save_path}.")
 
 print("\n")
 
-import os
 import numpy as np
 
-import subprocess
-import sys
-
-def install(package):
-    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-
-try:
+if interactive and not args.yes:
     print("Please press ENTER again to proceed.")
-    os.environ["PYUL_AXION_MASS_EV"] = "1e-21" # Set axion mass you need
-    import PyUltraLight2 as PyUL
-except ModuleNotFoundError:
-    
-    print("WARNING: Your current Python Executable failed to locate some required packages. [Y] to automatically attempt to resolve the issue. [N] if you with to install the packages manually. ")
-    
-    userinput = input()
-    
-    if userinput == 'Y':
-      
-        install('pyfftw')
-        install('numba')
-        install('numexpr')
-        install('multiprocessing')
-        print("Please press ENTER again to proceed.")
-        os.environ["PYUL_AXION_MASS_EV"] = "1e-21" # Set axion mass you need
-        import PyUltraLight2 as PyUL
-        
-    else:
-        raise RuntimeError("Benchmark Aborted!")
+    try:
+        input()
+    except EOFError:
+        pass
 
+os.environ["PYUL_AXION_MASS_EV"] = str(args.axion_mass) # Set axion mass you need (read at import)
+sys.path.insert(0, HERE)
+try:
+    import PyUltraLight2 as PyUL
+except ImportError as err:
+    raise SystemExit(
+        f"Could not import PyUltraLight2 ({err}).\n"
+        "Install the requirements first, for example\n"
+        "    pip install -r requirements.txt            (core)\n"
+        "    pip install -r requirements-full.txt       (with pyFFTW, h5py, numba)\n"
+        "or, from the repository root, pip install -e .[all]")
 
 
 ###### Do not touch
@@ -73,22 +86,8 @@ if (PyUL.S_version < MinVersion):
 
 np.set_printoptions(suppress=True)
 
-import math
-
-import psutil
 import platform
-from datetime import datetime
-
-import numba
-import numexpr as ne
 import time
-import pyfftw
-import os
-import sys
-import multiprocessing
-import numpy
-
-from numpy import sqrt, exp, log, log10, sin, cos, tan, pi
 
 # Useful Aux Functions
 ToCode = PyUL.convert
@@ -97,8 +96,6 @@ CB = PyUL.convert_between
 printU = PyUL.printU
 
 # Simulation Parameters
-
-save_path = 'Bench'
 
 if not os.path.exists(save_path):
     os.makedirs(save_path)
@@ -168,7 +165,9 @@ MF = 15
 CorrP = -COM/MF
 CorrV = -Momentum/MF
 
-solitons.append([Mass,CorrP.tolist(),CorrV.tolist(),0])
+# 30.50: the correcting soliton has mass MF (it used the last random Mass, so
+# the total momentum and COM were not actually zeroed).
+solitons.append([MF,CorrP.tolist(),CorrV.tolist(),0])
 
 COM += MF*CorrP
 
@@ -256,7 +255,9 @@ print(f"Version: {uname.version}")
 print(f"Machine: {uname.machine}")
 print(f"Processor: {uname.processor}")
 
-print(f"\nAvailable CPU Threads: {multiprocessing.cpu_count()}")
+Threads, ThreadSource = PyUL._compat.resolve_num_threads(resol)
+print(f"\nAvailable CPU Threads: {os.cpu_count()} (FFT threads used: {Threads}, {ThreadSource})")
+print(f"FFT backend: {PyUL._compat.resolve_fft_backend().name}")
 print(f"Resolution: {resol}")
 print(f"Avg Step (s): {DPS:.3g}")
 print("="*80)

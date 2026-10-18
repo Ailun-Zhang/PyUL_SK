@@ -1,4 +1,3 @@
-
 .DS_Store
 /.ipynb_checkpoints
 /Runs
@@ -7,6 +6,27 @@
 /Private
 /Bench
 /Tests
+!/tests/
 /2021April
 *.pyc
 *.icloud
+
+# Python build / test artefacts
+__pycache__/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+
+# Caches written by PyUL at run time (the shipped G96.npy and placeholder are tracked)
+/Green Functions/G*.npy
+!/Green Functions/G96.npy
+/Green Functions/.*.tmp
+/Soliton Profile Files/Custom/f_*
+/Soliton Profile Files/Custom/.*.tmp
+
+# Outputs of the examples
+/examples/output/
+/examples/*.log

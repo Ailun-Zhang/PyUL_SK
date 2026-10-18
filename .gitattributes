@@ -1,2 +1,17 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Normalise text files to LF in the repository and in working copies, so that
+# file hashes (e.g. the sha256 of PyUltraLight2/Current_SK.py recorded by the
+# paper drivers and in reproducibility.uldm) are the same on every platform.
+* text=auto eol=lf
+
+# Binary data
+*.npy binary
+*.npz binary
+*.h5 binary
+*.hdf5 binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.gif binary
+*.mp3 binary
+*.mp4 binary
+*.pdf binary

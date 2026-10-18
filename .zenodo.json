@@ -1,0 +1,56 @@
+{
+  "title": "PyUltraLight 2, SK fork (PyUL_SK)",
+  "upload_type": "software",
+  "version": "30.50",
+  "description": "<p>Fork of PyUltraLight 2 used for the black-hole simulations of <em>Stone Skipping Black Holes in Ultralight Dark Matter Solitons</em>: a pseudo-spectral (split-step Fourier) solver for the Schroedinger-Poisson equations of ultralight dark matter coupled to N-body point masses, with cell-centred grids, manual dynamical friction, isolated-potential and portability fixes, and an optional inline eigenmode (c_nlm) decomposition. Release 30.50 is a maintenance release of the 30.40 core used for part of the paper runs; see CHANGELOG.md.</p><p>Please also cite the upstream PyUltraLight and PyUltraLight 2 works listed in CITATION.cff.</p>",
+  "creators": [
+    {
+      "name": "Zhang, Alan",
+      "affiliation": "TODO: affiliation",
+      "orcid": "TODO: ORCID (or delete this key)"
+    }
+  ],
+  "keywords": [
+    "ultralight dark matter",
+    "Schroedinger-Poisson",
+    "solitons",
+    "black holes",
+    "N-body",
+    "dynamical friction",
+    "pseudo-spectral",
+    "PyUltraLight"
+  ],
+  "license": "MIT",
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.6336160",
+      "relation": "isDerivedFrom",
+      "resource_type": "software",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "10.1088/1475-7516/2018/10/027",
+      "relation": "references",
+      "resource_type": "publication-article",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "https://github.com/Ailun-Zhang/ULDM-Eigenmode-Toolkit",
+      "relation": "isReferencedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    },
+    {
+      "identifier": "TODO: DOI of the Physical Review D article (Stone Skipping Black Holes in Ultralight Dark Matter Solitons)",
+      "relation": "isSupplementTo",
+      "resource_type": "publication-article",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "TODO: Zenodo DOI of the data deposit StoneSkipping_PRD_data_v1",
+      "relation": "isSupplementedBy",
+      "resource_type": "dataset",
+      "scheme": "doi"
+    }
+  ]
+}
