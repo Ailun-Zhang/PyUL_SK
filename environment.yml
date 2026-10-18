@@ -1,0 +1,23 @@
+# Conda environment for PyUltraLight2 (SK fork 30.50).
+# Create with:  conda env create -f environment.yml && conda activate pyul-sk
+# then, from the repository root:  pip install -e . --no-deps
+# Works for python 3.9 - 3.14; change the python pin below if needed.
+# Reference versions of the Stone Skipping production environment (an HPC cluster running PBS Pro):
+# Python 3.9, numpy 1.26.4, scipy 1.13.1, numba 0.60, pyfftw 0.14, h5py 3.12.1.
+name: pyul-sk
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.9
+  - numpy>=1.20
+  - scipy>=1.6
+  - numexpr>=2.7
+  - matplotlib-base>=3.3
+  - pyfftw>=0.12
+  - h5py>=3.0
+  - numba>=0.53
+  - ipython>=7.0
+  - psutil
+  - pytest>=7
+  - pytest-timeout
+  - pip

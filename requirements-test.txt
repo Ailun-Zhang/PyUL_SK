@@ -1,0 +1,4 @@
+# Test requirements (run: python -m pytest)
+-r requirements.txt
+pytest>=7
+pytest-timeout

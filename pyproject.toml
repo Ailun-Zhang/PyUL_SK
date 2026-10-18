@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyultralight2-sk"
+version = "30.50"
+description = "PyUltraLight 2, SK fork: split-step Schroedinger-Poisson solver for ultralight dark matter with N-body particles"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "Alan Zhang" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+# Core dependencies are the modules imported unconditionally by
+# PyUltraLight2/Current_SK.py.  Everything else has a fallback since 30.50.
+dependencies = [
+    "numpy>=1.20",
+    "scipy>=1.6",
+    "numexpr>=2.7",
+    "matplotlib>=3.3",
+]
+
+[project.optional-dependencies]
+# pyFFTW is the default FFT backend when installed (the paper runs used it);
+# without it PyUL falls back to scipy.fft (PYUL_FFT_BACKEND=scipy).
+fftw = ["pyFFTW>=0.12"]
+# Only needed for save_format='hdf5' and the hdf5 loaders.
+hdf5 = ["h5py>=3.0"]
+# Only needed for speed in two helpers: embedded-soliton initialisation
+# (initsoliton) and Momentum/AngMomentum saves (LUQuick).
+numba = ["numba>=0.53"]
+# Jupyter display helpers (clear_output) and the shipped notebooks.
+notebook = ["ipython>=7.0", "jupyter"]
+# Benchmark.py reports machine information with psutil when available.
+bench = ["psutil"]
+test = ["pytest>=7", "pytest-timeout"]
+# Inline c_nlm decomposition, evolve(Cnlm=True).  Also needs the ULDM-Eigenmode-Toolkit
+# (package Eig_ULDM_packages >= 0.3.0, not on PyPI): pip install -e <ULDM-Eigenmode-Toolkit>
+cnlm = ["pyshtools>=4.10", "h5py>=3.0"]
+all = ["pyFFTW>=0.12", "h5py>=3.0", "numba>=0.53", "ipython>=7.0", "psutil"]
+
+[project.urls]
+Repository = "https://github.com/Ailun-Zhang/PyUL_SK"
+
+[tool.setuptools]
+# Only the package is installed.  The shipped data folders
+# ('Soliton Profile Files', 'Green Functions') stay in the repository and are
+# found next to the package; use an editable install (pip install -e .) or
+# set PYUL_DATA_DIR for other installs.
+packages = ["PyUltraLight2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+timeout = 1800

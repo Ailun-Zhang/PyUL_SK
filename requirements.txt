@@ -1,0 +1,6 @@
+# Core requirements of PyUltraLight2 (SK fork 30.50), Python 3.9 - 3.14.
+# Install with:  pip install -r requirements.txt   (or: pip install -e .)
+numpy>=1.20
+scipy>=1.6
+numexpr>=2.7
+matplotlib>=3.3
